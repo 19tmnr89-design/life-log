@@ -1,35 +1,4 @@
-# マイライフログ (life-log)
-
-日々の記録をまとめて管理・分析するための、個人用ミニアプリ集です。
-サーバー不要（GitHub Pagesでホスティング）で、データは端末のブラウザに保存され、
-Firebaseによる同期コードでスマホ・PC間で共有されます。
-
-## 構成
-
-```
-/                  ホーム（各アプリへのリンク集）
-/shared/           全アプリ共通の部品
-  ├── sync.js         端末間同期（Firebase Firestore）
-  └── firebase-config.js  Firebase接続設定
-/kintore/          💪 筋トレログ（トレーニング記録・分析）
-```
-
-今後、習慣・お金・ライフプラン・読書記録などをフォルダ単位で追加していきます。
-
-## アプリの追加方法（開発メモ）
-
-1. `/<appname>/` フォルダを作り、`index.html` / `app.js` / `style.css` を置く
-2. データは `localStorage["<appname>-log-v1"]` に配列で保存する
-3. 保存時に `window.dispatchEvent(new CustomEvent("<appname>:changed"))` を発火する
-4. `index.html` に同期UI（`#sync-status` `#sync-code` `#sync-connect` など）を置き、
-   読み込み前に `window.SYNC_APP = "<appname>"` を指定して `../shared/sync.js` を読み込む
-5. リモート反映は `window.addEventListener("<appname>:remote", ...)` で受けて再描画する
-
-同期は `window.SYNC_APP` ごとに Firestore コレクション・保存キーが分かれるため、
-1つのFirebaseプロジェクトで全アプリを独立して同期できます。
-
-## 公開
-
-GitHub の Settings → Pages で公開すると、
-`https://<ユーザー名>.github.io/life-log/`（ホーム）、
-`https://<ユーザー名>.github.io/life-log/kintore/`（筋トレ）でアクセスできます。
+date,exercise,body_part,set_no,weight_kg,reps,memo
+2026-07-01,ベンチプレス,胸,1,60,10,例：この行は削除して使ってください
+2026-07-01,ベンチプレス,胸,2,60,8,
+2026-07-01,ラットプルダウン,背中,1,50,12,

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#1a1d29">
+<title>筋トレログ</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="app-header">
+  <a href="index.html" class="home-link" title="ホームに戻る">←</a>
+  <h1>💪 筋トレログ</h1>
+</header>
+
+<main id="main">
+
+  <!-- 記録タブ -->
+  <section id="tab-input" class="tab-panel active">
+    <form id="record-form">
+      <div class="field">
+        <label for="f-date">日付</label>
+        <input type="date" id="f-date" required>
+      </div>
+
+      <div class="field">
+        <label for="f-bodypart">部位</label>
+        <select id="f-bodypart"></select>
+      </div>
+
+      <div class="field">
+        <label for="f-exercise">種目</label>
+        <input type="text" id="f-exercise" list="exercise-list" placeholder="例: ベンチプレス" required autocomplete="off">
+        <datalist id="exercise-list"></datalist>
+        <div id="recent-exercises" class="chip-row"></div>
+      </div>
+
+      <div class="field">
+        <label>セット（重量kg × 回数）</label>
+        <div id="sets-container"></div>
+        <div class="set-actions">
+          <button type="button" id="add-set" class="btn-sub">＋ セット追加</button>
+          <button type="button" id="copy-set" class="btn-sub">前セットをコピー</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="f-memo">メモ（任意）</label>
+        <input type="text" id="f-memo" placeholder="フォーム意識、調子など">
+      </div>
+
+      <button type="submit" class="btn-main">記録する</button>
+      <p id="save-msg" class="save-msg" hidden>✅ 保存しました</p>
+    </form>
+
+    <div id="today-summary"></div>
+  </section>
+
+  <!-- 履歴タブ -->
+  <section id="tab-history" class="tab-panel">
+    <div class="history-controls">
+      <input type="text" id="history-filter" placeholder="種目・部位・メモで絞り込み">
+    </div>
+    <div id="history-list"></div>
+  </section>
+
+  <!-- 分析タブ -->
+  <section id="tab-analysis" class="tab-panel">
+    <div id="analysis-empty" hidden>
+      <p class="empty-note">まだデータがありません。記録を追加するか、「データ」タブからCSVを取り込んでください。</p>
+    </div>
+    <div id="analysis-body">
+      <div class="card">
+        <h2>📊 サマリー</h2>
+        <div id="stats-grid" class="stats-grid"></div>
+      </div>
+      <div class="card">
+        <h2>🏆 種目別ベスト（PR）</h2>
+        <div id="pr-table"></div>
+      </div>
+      <div class="card">
+        <h2>📈 種目の推移</h2>
+        <select id="chart-exercise"></select>
+        <div class="chart-toggle">
+          <button type="button" data-mode="maxweight" class="chip active">最大重量</button>
+          <button type="button" data-mode="volume" class="chip">ボリューム</button>
+          <button type="button" data-mode="e1rm" class="chip">推定1RM</button>
+        </div>
+        <div id="chart-container"></div>
+      </div>
+      <div class="card">
+        <h2>📅 週ごとのトレーニング量</h2>
+        <div id="weekly-chart"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- データタブ -->
+  <section id="tab-data" class="tab-panel">
+    <div class="card">
+      <h2>⬇️ エクスポート</h2>
+      <p class="note">記録をファイルとして保存します。バックアップやClaudeでの分析に使えます。</p>
+      <button type="button" id="export-csv" class="btn-main">CSVをダウンロード</button>
+      <button type="button" id="export-json" class="btn-sub wide">JSONをダウンロード</button>
+    </div>
+    <div class="card">
+      <h2>⬆️ インポート</h2>
+      <p class="note">筋トレmemoから書き起こしたCSV、またはこのアプリで出力したCSV/JSONを取り込みます。既存データとは日付・種目・セット内容が完全一致する行だけ重複を除いて統合します。</p>
+      <p class="note mono">CSV形式: date,exercise,body_part,set_no,weight_kg,reps,memo<br>例: 2026-07-01,ベンチプレス,胸,1,60,10,</p>
+      <input type="file" id="import-file" accept=".csv,.json,text/csv,application/json">
+      <p id="import-msg" class="save-msg" hidden></p>
+    </div>
+    <div class="card">
+      <h2>🔄 端末間の同期</h2>
+      <p class="note">同じ「同期コード（合言葉）」を入れた端末どうしで、記録が自動で同期されます。スマホとPCの両方に同じコードを入れてください。</p>
+      <div id="sync-status" class="sync-status">未接続</div>
+      <input type="text" id="sync-code" placeholder="同期コード（例: myGym2026）" autocomplete="off">
+      <button type="button" id="sync-connect" class="btn-main">同期を開始</button>
+      <button type="button" id="sync-disconnect" class="btn-sub wide" hidden>同期を解除</button>
+
+      <div id="sync-config-box" hidden>
+        <p class="note" style="margin-top:14px;">初回のみ、Firebaseの設定を貼り付けてください（Firebaseコンソールの firebaseConfig の中身）。</p>
+        <textarea id="sync-config-input" rows="7" placeholder='{ "apiKey": "...", "authDomain": "...", "projectId": "...", "appId": "..." }'></textarea>
+        <button type="button" id="sync-config-save" class="btn-sub wide">設定を保存</button>
+      </div>
+    </div>
+
+    <div class="card danger-zone">
+      <h2>🗑 全データ削除</h2>
+      <p class="note">この端末（ブラウザ）に保存された記録をすべて削除します。元に戻せません。</p>
+      <button type="button" id="clear-all" class="btn-danger">すべて削除</button>
+    </div>
+  </section>
+
+</main>
+
+<nav class="tab-bar">
+  <button class="tab-btn active" data-tab="input">✏️<span>記録</span></button>
+  <button class="tab-btn" data-tab="history">📋<span>履歴</span></button>
+  <button class="tab-btn" data-tab="analysis">📈<span>分析</span></button>
+  <button class="tab-btn" data-tab="data">💾<span>データ</span></button>
+</nav>
+
+<script src="app.js"></script>
+<script>window.SYNC_APP = "kintore";</script>
+<script type="module" src="sync.js"></script>
+</body>
+</html>

@@ -1,224 +1,77 @@
-// 端末間同期モジュール（Firebase Firestore）— 複数アプリ共通
-//
-// 各アプリの index.html で、このモジュールを読み込む前に
-//   <script>window.SYNC_APP = "kintore";</script>
-// のようにアプリ名を指定する（未指定なら "kintore"）。
-//
-// アプリ名ごとに保存キー・Firestoreコレクション・イベント名が分かれるので、
-// 同じ仕組みを筋トレ／習慣／お金…と使い回せる。
-//
-// データ本体は localStorage["<app>-log-v1"] が唯一の出所。各アプリの app.js とはイベントで連携する:
-//   - app.js は保存時に "<app>:changed" を dispatch する
-//   - このモジュールはリモート反映時に "<app>:remote" を dispatch する（app.js が再描画）
-
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { firebaseConfig as bakedConfig } from "./firebase-config.js";
-
-const APP = window.SYNC_APP || "kintore";
-const STORAGE_KEY = `${APP}-log-v1`;
-const CODE_KEY = `${APP}-sync-code`;
-const DEVICE_KEY = `${APP}-device-id`;
-const CFG_KEY = `${APP}-fb-config`;       // UIから貼り付けた設定の保存先
-const CHANGED_EVT = `${APP}:changed`;
-const REMOTE_EVT = `${APP}:remote`;
-
-/* -------- ユーティリティ -------- */
-
-function getDeviceId() {
-  let id = localStorage.getItem(DEVICE_KEY);
-  if (!id) {
-    id = Math.random().toString(36).slice(2) + Date.now().toString(36);
-    localStorage.setItem(DEVICE_KEY, id);
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#12141c">
+<title>マイライフログ</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #12141c; --panel: #1c1f2b; --panel2: #262a3a;
+    --text: #e8eaf2; --sub: #9aa0b4; --line: #34394e; --accent: #4dabf7;
   }
-  return id;
-}
-const deviceId = getDeviceId();
-
-async function sha256Hex(text) {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("");
-}
-
-function loadLocal() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch { return []; }
-}
-
-function recordFingerprint(r) {
-  const sets = (r.sets || []).map(s => `${s.weight}x${s.reps}`).join("|");
-  return `${r.date} ${r.exercise} ${sets}`;
-}
-
-// ローカルとリモートを「和集合」で統合（同期の初回リンク時に、どちらのデータも失わないため）
-function unionRecords(a, b) {
-  const seen = new Set();
-  const out = [];
-  for (const r of [...a, ...b]) {
-    const fp = recordFingerprint(r);
-    if (seen.has(fp)) continue;
-    seen.add(fp);
-    out.push(r);
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh;
+    padding: 28px 18px 40px; max-width: 640px; margin: 0 auto;
   }
-  return out;
-}
-
-function effectiveConfig() {
-  const pasted = localStorage.getItem(CFG_KEY);
-  if (pasted) {
-    try { return JSON.parse(pasted); } catch { /* fallthrough */ }
+  header { margin-bottom: 24px; }
+  h1 { font-size: 22px; font-weight: 700; }
+  .sub { color: var(--sub); font-size: 13px; margin-top: 6px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .app-card {
+    display: flex; flex-direction: column; gap: 6px;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 18px 16px; text-decoration: none; color: var(--text);
+    min-height: 108px; justify-content: center;
   }
-  return bakedConfig;
-}
-
-function isConfigured(cfg) {
-  return cfg && typeof cfg.apiKey === "string" &&
-    cfg.apiKey && !cfg.apiKey.startsWith("PASTE_") &&
-    cfg.projectId && !String(cfg.projectId).startsWith("PASTE_");
-}
-
-/* -------- Firebase 状態 -------- */
-
-let db = null, auth = null, docRef = null, unsub = null;
-let pushTimer = null;
-
-function setStatus(text, cls) {
-  const el = document.getElementById("sync-status");
-  if (el) { el.textContent = text; el.className = "sync-status " + (cls || ""); }
-}
-
-async function ensureFirebase() {
-  if (db) return true;
-  const cfg = effectiveConfig();
-  if (!isConfigured(cfg)) return false;
-  const app = initializeApp(cfg);
-  auth = getAuth(app);
-  db = getFirestore(app);
-  await signInAnonymously(auth);
-  return true;
-}
-
-function schedulePush() {
-  if (!docRef) return;
-  clearTimeout(pushTimer);
-  pushTimer = setTimeout(pushNow, 800); // 連続変更をまとめて送る
-}
-
-async function pushNow() {
-  if (!docRef) return;
-  try {
-    await setDoc(docRef, { records: loadLocal(), updatedAt: Date.now(), updatedBy: deviceId });
-    setStatus("✅ 同期オン｜保存しました " + new Date().toLocaleTimeString("ja-JP"), "ok");
-  } catch (e) {
-    setStatus("⚠️ 同期エラー: " + (e.code || e.message), "err");
+  .app-card:active { opacity: 0.8; }
+  .app-card .emoji { font-size: 30px; }
+  .app-card .name { font-size: 15px; font-weight: 700; }
+  .app-card .desc { font-size: 11px; color: var(--sub); }
+  .app-card.soon { opacity: 0.55; }
+  .app-card.soon .badge {
+    font-size: 10px; color: var(--sub); background: var(--panel2);
+    padding: 2px 8px; border-radius: 999px; align-self: flex-start; margin-top: 2px;
   }
-}
+  footer { margin-top: 28px; color: var(--sub); font-size: 11px; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🗂 マイライフログ</h1>
+  <p class="sub">日々の記録をまとめて管理・分析</p>
+</header>
 
-async function connect(code) {
-  code = (code || "").trim();
-  if (code.length < 4) { setStatus("同期コードは4文字以上にしてください", "err"); return; }
-  setStatus("接続中…", "");
-  try {
-    if (!(await ensureFirebase())) { setStatus("Firebase設定が未登録です", "err"); return; }
-    const id = await sha256Hex(APP + ":" + code);
-    docRef = doc(db, APP, id);
+<div class="grid">
+  <a class="app-card" href="kintore.html">
+    <span class="emoji">💪</span>
+    <span class="name">筋トレログ</span>
+    <span class="desc">トレーニング記録と分析</span>
+  </a>
+  <div class="app-card soon">
+    <span class="emoji">✅</span>
+    <span class="name">習慣</span>
+    <span class="badge">準備中</span>
+  </div>
+  <div class="app-card soon">
+    <span class="emoji">💰</span>
+    <span class="name">お金</span>
+    <span class="badge">準備中</span>
+  </div>
+  <div class="app-card soon">
+    <span class="emoji">📊</span>
+    <span class="name">ライフプラン</span>
+    <span class="badge">準備中</span>
+  </div>
+  <div class="app-card soon">
+    <span class="emoji">📚</span>
+    <span class="name">読書記録</span>
+    <span class="badge">準備中</span>
+  </div>
+</div>
 
-    // 初回リンク: リモートとローカルを和集合で統合してから購読開始
-    const snap = await getDoc(docRef);
-    const local = loadLocal();
-    if (snap.exists()) {
-      const remote = snap.data().records || [];
-      const merged = unionRecords(local, remote);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
-      window.dispatchEvent(new CustomEvent(REMOTE_EVT));
-      await setDoc(docRef, { records: merged, updatedAt: Date.now(), updatedBy: deviceId });
-    } else {
-      await setDoc(docRef, { records: local, updatedAt: Date.now(), updatedBy: deviceId });
-    }
-
-    if (unsub) unsub();
-    unsub = onSnapshot(docRef, snap2 => {
-      if (!snap2.exists()) return;
-      const data = snap2.data();
-      if (data.updatedBy === deviceId) return; // 自分の書き込みは無視（ループ防止）
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data.records || []));
-      window.dispatchEvent(new CustomEvent(REMOTE_EVT));
-      setStatus("✅ 同期オン｜他の端末から更新を受信 " + new Date().toLocaleTimeString("ja-JP"), "ok");
-    }, err => setStatus("⚠️ 同期エラー: " + (err.code || err.message), "err"));
-
-    localStorage.setItem(CODE_KEY, code);
-    setStatus("✅ 同期オン（コード: " + code + "）｜この端末は同期されています", "ok");
-    updateButtons(true);
-  } catch (e) {
-    setStatus("接続失敗: " + (e.code || e.message), "err");
-  }
-}
-
-function disconnect() {
-  if (unsub) { unsub(); unsub = null; }
-  docRef = null;
-  localStorage.removeItem(CODE_KEY);
-  setStatus("未接続", "");
-  updateButtons(false);
-}
-
-function updateButtons(connected) {
-  const conn = document.getElementById("sync-connect");
-  const disc = document.getElementById("sync-disconnect");
-  const input = document.getElementById("sync-code");
-  if (conn) conn.hidden = connected;
-  if (disc) disc.hidden = !connected;
-  if (input) input.disabled = connected;
-}
-
-/* -------- 画面初期化 -------- */
-
-function initUI() {
-  const cfg = effectiveConfig();
-  const configured = isConfigured(cfg);
-
-  const cfgBox = document.getElementById("sync-config-box");
-  const cfgArea = document.getElementById("sync-config-input");
-  const cfgSave = document.getElementById("sync-config-save");
-  // 設定済みなら貼り付け欄は隠す（未設定のときだけ表示）
-  if (cfgBox) cfgBox.hidden = configured;
-
-  if (cfgSave) cfgSave.addEventListener("click", () => {
-    try {
-      const raw = cfgArea.value.trim();
-      // "firebaseConfig = {...}" でも "{...}" でも受け付ける
-      const jsonStart = raw.indexOf("{");
-      const obj = JSON.parse(raw.slice(jsonStart).replace(/;\s*$/, "").replace(/(\w+):/g, '"$1":').replace(/'/g, '"'));
-      if (!obj.apiKey || !obj.projectId) throw new Error("apiKey / projectId がありません");
-      localStorage.setItem(CFG_KEY, JSON.stringify(obj));
-      setStatus("設定を保存しました。同期コードを入れて開始してください", "ok");
-      if (cfgBox) cfgBox.hidden = true;
-      db = null; // 再初期化させる
-    } catch (e) {
-      setStatus("設定の読み取りに失敗: " + e.message, "err");
-    }
-  });
-
-  const conn = document.getElementById("sync-connect");
-  const disc = document.getElementById("sync-disconnect");
-  if (conn) conn.addEventListener("click", () => connect(document.getElementById("sync-code").value));
-  if (disc) disc.addEventListener("click", disconnect);
-
-  // ローカル変更 → Push
-  window.addEventListener(CHANGED_EVT, schedulePush);
-
-  // 保存済みコードがあれば自動再接続
-  const saved = localStorage.getItem(CODE_KEY);
-  if (saved) {
-    document.getElementById("sync-code").value = saved;
-    connect(saved);
-  } else {
-    setStatus(configured ? "未接続" : "Firebase設定が未登録です", configured ? "" : "err");
-  }
-}
-
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", initUI);
-} else {
-  initUI();
-}
+<footer>各アプリのデータは端末に保存され、同期コードでスマホ・PC間で共有されます。</footer>
+</body>
+</html>
