@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#12141c">
+<title>お金ログ</title>
+<link rel="stylesheet" href="money.css">
+</head>
+<body>
+
+<!-- ================= 入力 ================= -->
+<section class="screen on" id="s-entry">
+  <div class="top">
+    <a href="index.html" class="home" title="ホームに戻る">←</a>
+    <h1>💰 お金ログ</h1>
+    <div class="meta">今月の支出<b id="mtotal">0</b>円</div>
+  </div>
+  <div class="head">
+    <div class="seg" id="type">
+      <button data-t="e" aria-pressed="true">支出</button>
+      <button data-t="i" aria-pressed="false">収入</button>
+    </div>
+    <div class="amtrow">
+      <span class="amt zero" id="amt">0</span><span class="yen">円</span>
+      <button class="datebtn" id="dateBtn">📅 <b id="dateLbl">今日</b></button>
+    </div>
+    <input class="memo" id="memo" placeholder="お店・補足（任意）" autocomplete="off">
+  </div>
+  <div class="cats" id="cats"></div>
+  <div class="pad" id="pad">
+    <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+    <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+    <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+    <button data-k="00" class="util">00</button><button data-k="0">0</button>
+    <button data-k="del" class="util" aria-label="1文字消す">⌫</button>
+  </div>
+</section>
+
+<!-- ================= 定例 ================= -->
+<section class="screen" id="s-fixed">
+  <div class="top">
+    <a href="index.html" class="home" title="ホームに戻る">←</a>
+    <h1>定例（毎月20日）</h1>
+    <div class="meta" id="fixState"></div>
+  </div>
+  <div class="body">
+    <div class="mnav">
+      <button id="fPrev" aria-label="前の月">‹</button>
+      <div class="m" id="fMonth"></div>
+      <button id="fNext" aria-label="次の月">›</button>
+    </div>
+    <p class="hint" id="fHint"></p>
+    <div class="total">
+      <span class="l">収入 − 支出</span>
+      <span class="v" id="fNet">0<small>円</small></span>
+    </div>
+    <div id="fixList"></div>
+    <div id="addPanel" hidden></div>
+    <div class="savebar">
+      <button class="primary" id="saveFixed">この月の定例をまとめて記録</button>
+      <button class="secondary" id="addFixed">＋ 定例に項目を追加</button>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 資産 ================= -->
+<section class="screen" id="s-assets">
+  <div class="top">
+    <a href="index.html" class="home" title="ホームに戻る">←</a>
+    <h1>資産</h1>
+    <div class="meta" id="asOf"></div>
+  </div>
+  <div class="body">
+    <div class="seg wide" id="assetMode">
+      <button data-m="chart" aria-pressed="true">推移</button>
+      <button data-m="edit" aria-pressed="false">残高を入力</button>
+    </div>
+
+    <div id="assetChart">
+      <div class="tiles-stat" id="stats"></div>
+      <div class="chartcard">
+        <h2>区分別の推移</h2>
+        <p class="cap">積み上げ＝区分ごとの残高、上端の線＝総資産</p>
+        <div class="rangebtns" id="range">
+          <button data-m="0" aria-pressed="true">全期間</button>
+          <button data-m="60" aria-pressed="false">5年</button>
+          <button data-m="24" aria-pressed="false">2年</button>
+          <button data-m="12" aria-pressed="false">12ヶ月</button>
+        </div>
+        <svg id="chart" viewBox="0 0 860 400" role="img" aria-label="資産区分別の推移（積み上げ面グラフ）"></svg>
+        <div class="tip" id="tip"></div>
+        <div class="legend" id="legend"></div>
+      </div>
+      <div class="chartcard">
+        <h2>最新時点の内訳</h2>
+        <p class="cap" id="breakCap"></p>
+        <div id="breakdown"></div>
+      </div>
+    </div>
+
+    <div id="assetEdit" hidden>
+      <div class="total"><span class="l">合計</span><span class="v" id="aTotal">0<small>万円</small></span></div>
+      <p class="hint" id="aHint"></p>
+      <div id="accList"></div>
+      <div class="savebar"><button class="primary" id="saveAssets">この月の残高を保存</button></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 履歴 ================= -->
+<section class="screen" id="s-log">
+  <div class="top">
+    <a href="index.html" class="home" title="ホームに戻る">←</a>
+    <h1>履歴</h1>
+    <div class="meta" id="logCount"></div>
+  </div>
+  <div class="body" id="logBody"></div>
+</section>
+
+<!-- ================= データ ================= -->
+<section class="screen" id="s-data">
+  <div class="top">
+    <a href="index.html" class="home" title="ホームに戻る">←</a>
+    <h1>データ</h1>
+    <div class="meta" id="dataCount"></div>
+  </div>
+  <div class="body">
+
+    <div class="card">
+      <h2>⬆️ 取り込み</h2>
+      <p class="note">Excelから変換したCSVを取り込みます。4種類まとめて選べます。<strong>取り込みは1台だけで行い、他の端末へは同期で配ってください。</strong></p>
+      <p class="note mono">money_accounts.csv   id,name,cat,owner,wrap,liquid,active
+money_assets.csv     date,account_id,amount_yen
+money_tx.csv         date,type,cat,sub,item,amount_yen,kind,freq
+money_targets_2027.csv  account_id,target_yen</p>
+      <input type="file" id="importFile" accept=".csv,text/csv" multiple>
+      <p class="msg" id="importMsg" hidden></p>
+    </div>
+
+    <div class="card">
+      <h2>⬇️ 書き出し</h2>
+      <p class="note">この端末の記録をJSONで保存します。バックアップや分析に使えます。</p>
+      <button type="button" class="secondary" id="exportJson" style="margin-top:0">JSONをダウンロード</button>
+      <p class="note" id="sizeNote" style="margin:11px 0 0"></p>
+    </div>
+
+    <div class="card">
+      <h2>🔄 端末間の同期</h2>
+      <p class="note">同じ「同期コード（合言葉）」を入れた端末どうしで記録が自動で同期されます。<strong>家計・資産のデータなので、筋トレより長めのコード（20文字程度のランダムな文字列）にしてください。</strong></p>
+      <div id="sync-status" class="sync-status">未接続</div>
+      <input type="text" id="sync-code" placeholder="同期コード" autocomplete="off">
+      <button type="button" class="secondary" id="genCode" style="margin:0 0 9px">ランダムなコードを生成</button>
+      <button type="button" class="primary" id="sync-connect">同期を開始</button>
+      <button type="button" class="secondary" id="sync-disconnect" hidden>同期を解除</button>
+
+      <div id="sync-config-box" hidden>
+        <p class="note" style="margin-top:14px">初回のみ、Firebaseの設定を貼り付けてください（Firebaseコンソールの firebaseConfig の中身）。</p>
+        <textarea id="sync-config-input" rows="7" placeholder='{ "apiKey": "...", "authDomain": "...", "projectId": "...", "appId": "..." }'></textarea>
+        <button type="button" class="secondary" id="sync-config-save" style="margin-top:0">設定を保存</button>
+      </div>
+    </div>
+
+    <div class="card danger">
+      <h2>🗑 全データ削除</h2>
+      <p class="note">この端末（ブラウザ）に保存されたお金の記録をすべて削除します。元に戻せません。</p>
+      <button type="button" class="destructive" id="clearAll">すべて削除</button>
+    </div>
+
+  </div>
+</section>
+
+<nav id="tabs">
+  <button data-s="s-entry" aria-current="page"><span>✏️</span>入力</button>
+  <button data-s="s-fixed"><span>🔁</span>定例</button>
+  <button data-s="s-assets"><span>📊</span>資産</button>
+  <button data-s="s-log"><span>🕘</span>履歴</button>
+  <button data-s="s-data"><span>💾</span>データ</button>
+</nav>
+
+<div class="toast" id="toast"><span id="toastMsg"></span><button id="undo">取り消す</button></div>
+
+<script src="money.app.js"></script>
+<script>window.SYNC_APP = "money";</script>
+<script type="module" src="sync.js"></script>
+</body>
+</html>
