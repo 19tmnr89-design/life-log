@@ -46,6 +46,8 @@ function loadLocal() {
 }
 
 function recordFingerprint(r) {
+  // アプリ側が指紋関数を指定していればそれを使う（未指定なら従来どおり筋トレ用）
+  if (typeof window.SYNC_FINGERPRINT === "function") return window.SYNC_FINGERPRINT(r);
   const sets = (r.sets || []).map(s => `${s.weight}x${s.reps}`).join("|");
   return `${r.date} ${r.exercise} ${sets}`;
 }
