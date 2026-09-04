@@ -160,12 +160,21 @@ function renderAmt(){
   const v = +digits || 0;
   $("amt").textContent = yen(v);
   $("amt").classList.toggle("zero", v === 0);
+  $("padAmt").textContent = yen(v) + " 円";
   document.querySelectorAll("#cats .tile").forEach(t => t.disabled = v === 0);
   const n = $("needAmt"); if(n) n.hidden = v > 0;
 }
+/* テンキーは金額を打つときだけ出す。出しっぱなしだとカテゴリが選べないため。 */
+function padOpen(on){
+  $("pad").classList.toggle("on", on);
+  $("amtBtn").setAttribute("aria-expanded", on ? "true" : "false");
+  $("amtHint").textContent = on ? "完了で閉じる" : "タップして入力";
+}
+$("amtBtn").addEventListener("click", () => padOpen(!$("pad").classList.contains("on")));
+$("padDone").addEventListener("click", () => padOpen(false));
 $("pad").addEventListener("click", e => {
   const b = e.target.closest("button"); if(!b) return;
-  const k = b.dataset.k;
+  const k = b.dataset.k; if(!k) return;      // 「完了」ボタンは数字ではない
   if(k === "del") digits = digits.slice(0, -1);
   else if(digits.length < 8) digits = (digits + k).replace(/^0+(?=\d)/, "");
   renderAmt();
@@ -244,6 +253,7 @@ function commit(sub, cat, kind, freq){
   bumpFav(sub); lastIds = [rec.id];
   toast(`${sub} ${yen(rec.m)}円 を記録`, true);
   digits = ""; level1 = null; $("memo").value = "";
+  padOpen(false);
   renderCats(); renderMonth();
 }
 
@@ -712,6 +722,27 @@ function dataSize(){
   const b = new Blob([localStorage.getItem(KEY) || "[]"]).size;
   return { bytes:b, pct:Math.round(b / 1048576 * 100) };
 }
+/* 同期がうまくいっているか一目で分かるように、種類ごとの件数を出す */
+function renderBreakdown(){
+  const el = $("breakdownData"); if(!el) return;
+  const a = recs();
+  const tx = a.filter(r => r.k === "t");
+  const rows = [
+    ["取引（家計簿）", tx.length],
+    ["資産の残高", a.filter(r => r.k === "a").length],
+    ["口座", a.filter(r => r.k === "acc").length],
+    ["2027年の目標", a.filter(r => r.k === "tgt").length]
+  ];
+  const span = tx.length
+    ? tx.map(r => r.d).sort().at(0).replace(/-/g,"/") + " 〜 " + tx.map(r => r.d).sort().at(-1).replace(/-/g,"/")
+    : "";
+  el.innerHTML = rows.map(([k, v]) =>
+    `<div class="row"><span class="nm">${k}</span>
+      <span style="font-weight:700;font-variant-numeric:tabular-nums">${yen(v)}</span>
+      <span class="u">件</span></div>`).join("")
+    + (span ? `<p class="note" style="margin:9px 2px 0">期間 ${span}</p>` : "")
+    + (tx.length ? "" : `<p class="note err" style="margin:9px 2px 0">記録がまだ1件もありません。PCで4本のCSVを取り込み、同じ同期コードで両方の端末を繋いでください。</p>`);
+}
 function renderMonth(){
   const ym = today().slice(0, 7);
   const v = recs().filter(r => r.k === "t" && rType(r) === "e" && r.d.startsWith(ym))
@@ -719,6 +750,7 @@ function renderMonth(){
   $("mtotal").textContent = yen(v);
   const ds = dataSize();
   $("dataCount").textContent = `${yen(recs().length)}件`;
+  renderBreakdown();
   const el = $("sizeNote");
   if(el){
     el.textContent = `いまのデータ量 ${(ds.bytes/1024).toFixed(0).replace(/\B(?=(\d{3})+$)/g,",")} KB（同期1件あたりの上限 1,024 KB の ${ds.pct}%）`;
@@ -754,8 +786,8 @@ function renderAll(){
   if($("s-assets").classList.contains("on")) assetMode === "chart" ? renderChart() : renderAssetEdit();
   if($("s-log").classList.contains("on")) renderLog();
 }
-/* 他の端末から同期で降ってきたら描き直す */
-window.addEventListener("money:remote", renderAll);
+/* 他の端末から同期で降ってきたら、キャッシュを捨てて描き直す */
+window.addEventListener("money:remote", () => { _map = null; renderAll(); });
 window.addEventListener("resize", () => { $("tip").style.opacity = 0; });
 
 renderAll();

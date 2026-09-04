@@ -22,13 +22,20 @@
       <button data-t="i" aria-pressed="false">収入</button>
     </div>
     <div class="amtrow">
-      <span class="amt zero" id="amt">0</span><span class="yen">円</span>
+      <button class="amtbtn" id="amtBtn" aria-expanded="false">
+        <span class="amt zero" id="amt">0</span><span class="yen">円</span>
+        <span class="amthint" id="amtHint">タップして入力</span>
+      </button>
       <button class="datebtn" id="dateBtn">📅 <b id="dateLbl">今日</b></button>
     </div>
     <input class="memo" id="memo" placeholder="お店・補足（任意）" autocomplete="off">
   </div>
   <div class="cats" id="cats"></div>
   <div class="pad" id="pad">
+    <div class="padbar">
+      <span class="padamt" id="padAmt">0 円</span>
+      <button id="padDone">完了</button>
+    </div>
     <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
     <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
     <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
@@ -139,10 +146,15 @@ money_targets_2027.csv  account_id,target_yen</p>
     </div>
 
     <div class="card">
+      <h2>📦 いま入っている記録</h2>
+      <div id="breakdownData"></div>
+      <p class="note" id="sizeNote" style="margin:11px 0 0"></p>
+    </div>
+
+    <div class="card">
       <h2>⬇️ 書き出し</h2>
       <p class="note">この端末の記録をJSONで保存します。バックアップや分析に使えます。</p>
       <button type="button" class="secondary" id="exportJson" style="margin-top:0">JSONをダウンロード</button>
-      <p class="note" id="sizeNote" style="margin:11px 0 0"></p>
     </div>
 
     <div class="card">
