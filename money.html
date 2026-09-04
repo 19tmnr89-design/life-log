@@ -122,14 +122,46 @@
   </div>
 </section>
 
-<!-- ================= 履歴 ================= -->
+<!-- ================= 支出 ================= -->
 <section class="screen" id="s-log">
   <div class="top">
     <a href="index.html" class="home" title="ホームに戻る">←</a>
-    <h1>履歴</h1>
+    <h1>支出</h1>
     <div class="meta" id="logCount"></div>
   </div>
-  <div class="body" id="logBody"></div>
+  <div class="body">
+    <div class="seg wide" id="logMode">
+      <button data-m="chart" aria-pressed="true">推移</button>
+      <button data-m="list" aria-pressed="false">履歴</button>
+    </div>
+
+    <div id="expWrap">
+      <div class="tiles-stat" id="expStats"></div>
+      <div class="chartcard">
+        <h2>月ごとの支出と収入</h2>
+        <p class="cap">積み上げ棒＝大項目別の支出、白い線＝収入</p>
+        <div class="rangebtns" id="expRange">
+          <button data-m="12" aria-pressed="true">12ヶ月</button>
+          <button data-m="24" aria-pressed="false">24ヶ月</button>
+          <button data-m="0" aria-pressed="false">全期間</button>
+        </div>
+        <div class="rangebtns" id="expFilter">
+          <button data-f="all" aria-pressed="true">すべて</button>
+          <button data-f="use" aria-pressed="false">消費のみ</button>
+        </div>
+        <svg id="expChart" viewBox="0 0 860 400" role="img" aria-label="月ごとの支出（大項目別の積み上げ棒）と収入"></svg>
+        <div class="tip" id="expTip"></div>
+        <div class="legend" id="expLegend"></div>
+      </div>
+      <div class="chartcard">
+        <h2>大項目別</h2>
+        <p class="cap" id="expCatCap"></p>
+        <div id="expCats"></div>
+      </div>
+    </div>
+
+    <div id="logBody" hidden></div>
+  </div>
 </section>
 
 <!-- ================= データ ================= -->
@@ -193,7 +225,7 @@ money_targets_2027.csv  account_id,target_yen</p>
   <button data-s="s-entry" aria-current="page"><span>✏️</span>入力</button>
   <button data-s="s-fixed"><span>🔁</span>定例</button>
   <button data-s="s-assets"><span>📊</span>資産</button>
-  <button data-s="s-log"><span>🕘</span>履歴</button>
+  <button data-s="s-log"><span>📉</span>支出</button>
   <button data-s="s-data"><span>💾</span>データ</button>
 </nav>
 

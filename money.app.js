@@ -91,6 +91,9 @@ const SURFACE = "#1c1f2b";
 let type = "e", digits = "", date = today(), lastIds = [], level1 = null;
 let fMonth = today().slice(0, 7), chartMonths = 0, assetMode = "chart";
 let searchQ = "";
+let logMode = "chart", expMonths = 12, expFilter = "all";
+/* マウスとキーボードのある端末か（PCなら数字キーで金額を打てるようにする） */
+const FINE = window.matchMedia("(pointer:fine)").matches || !("ontouchstart" in window);
 
 const favs = () => { try { return JSON.parse(localStorage.getItem(FAV) || "{}"); } catch { return {}; } };
 const bumpFav = n => { const f = favs(); f[n] = (f[n] || 0) + 1; localStorage.setItem(FAV, JSON.stringify(f)); };
@@ -184,10 +187,26 @@ function renderAmt(){
 function padOpen(on){
   $("pad").classList.toggle("on", on);
   $("amtBtn").setAttribute("aria-expanded", on ? "true" : "false");
-  $("amtHint").textContent = on ? "完了で閉じる" : "タップして入力";
+  $("amtHint").textContent = on ? "完了で閉じる" : (FINE ? "数字キーで入力できます" : "タップして入力");
 }
 $("amtBtn").addEventListener("click", () => padOpen(!$("pad").classList.contains("on")));
 $("padDone").addEventListener("click", () => padOpen(false));
+/* PCの数字キーで金額を打てるようにする。文字入力中やシートを開いている間は邪魔しない。 */
+document.addEventListener("keydown", e => {
+  if(!$("s-entry").classList.contains("on")) return;
+  if(!$("editSheet").hidden) return;
+  if(e.metaKey || e.ctrlKey || e.altKey) return;
+  const t = e.target;
+  if(t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+  if(/^[0-9]$/.test(e.key)){
+    if(digits.length < 8) digits = (digits + e.key).replace(/^0+(?=\d)/, "");
+    renderAmt(); e.preventDefault();
+  } else if(e.key === "Backspace"){
+    digits = digits.slice(0, -1); renderAmt(); e.preventDefault();
+  } else if(e.key === "Escape"){
+    digits = ""; renderAmt(); padOpen(false); e.preventDefault();
+  }
+});
 $("pad").addEventListener("click", e => {
   const b = e.target.closest("button"); if(!b) return;
   const k = b.dataset.k; if(!k) return;      // 「完了」ボタンは数字ではない
@@ -768,6 +787,188 @@ $("eDelete").addEventListener("click", () => {
 });
 
 /* =========================================================================
+   支出のグラフ
+   ========================================================================= */
+$("logMode").addEventListener("click", e => {
+  const b = e.target.closest("button"); if(!b) return;
+  logMode = b.dataset.m;
+  [...e.currentTarget.children].forEach(x => x.setAttribute("aria-pressed", x === b));
+  $("expWrap").hidden = logMode !== "chart";
+  $("logBody").hidden = logMode !== "list";
+  logMode === "chart" ? renderExp() : renderLog();
+});
+$("expRange").addEventListener("click", e => {
+  const b = e.target.closest("button"); if(!b) return;
+  [...e.currentTarget.children].forEach(x => x.setAttribute("aria-pressed", x === b));
+  expMonths = +b.dataset.m; renderExp();
+});
+$("expFilter").addEventListener("click", e => {
+  const b = e.target.closest("button"); if(!b) return;
+  [...e.currentTarget.children].forEach(x => x.setAttribute("aria-pressed", x === b));
+  expFilter = b.dataset.f; renderExp();
+});
+
+/* 月ごとに、大項目別の支出と収入を集計する。
+   大項目は13個あって色が足りないので、期間合計の上位7つ＋「その他」にまとめる。 */
+function expSeries(){
+  const rs = recs().filter(r => r.k === "t");
+  const all = [...new Set(rs.map(r => r.d.slice(0, 7)))].sort();
+  const list = expMonths ? all.slice(-expMonths) : all;
+  const set = new Set(list);
+  const byMonth = {}, catTotal = {};
+  list.forEach(m => byMonth[m] = { inc:0, exp:{} });
+  for(const r of rs){
+    const m = r.d.slice(0, 7); if(!set.has(m)) continue;
+    if(rType(r) === "i"){ byMonth[m].inc += r.m; continue; }
+    const k = rKind(r);
+    if(expFilter === "use" && (k === T || k === I)) continue;   // 税金と投資を除いた「消費」だけ
+    const c = rCat(r) || "未分類";
+    byMonth[m].exp[c] = (byMonth[m].exp[c] || 0) + r.m;
+    catTotal[c] = (catTotal[c] || 0) + r.m;
+  }
+  const ranked = Object.entries(catTotal).sort((a, b) => b[1] - a[1]).map(x => x[0]);
+  const top = ranked.slice(0, 7);
+  const order = ranked.length > 7 ? [...top, "その他"] : top;
+  const data = list.map(m => {
+    const o = {}; order.forEach(c => o[c] = 0);
+    for(const [c, v] of Object.entries(byMonth[m].exp)) o[top.includes(c) ? c : "その他"] += v;
+    return o;
+  });
+  const folded = {};
+  order.forEach(c => folded[c] = 0);
+  Object.entries(catTotal).forEach(([c, v]) => folded[top.includes(c) ? c : "その他"] += v);
+  return { months:list, order, data, income:list.map(m => byMonth[m].inc),
+           expTotal:list.map((m, i) => order.reduce((s, c) => s + data[i][c], 0)), folded };
+}
+
+function renderExp(){
+  const S = expSeries();
+  if(!S.months.length){
+    $("expStats").innerHTML = ""; $("expChart").innerHTML = ""; $("expLegend").innerHTML = "";
+    $("expCats").innerHTML = `<p class="empty">支出の記録がまだありません。</p>`;
+    $("expCatCap").textContent = "";
+    return;
+  }
+  /* 上の数字は「今月」。月の途中でも実績として出す。 */
+  const cur = today().slice(0, 7);
+  const i = S.months.indexOf(cur);
+  const eNow = i >= 0 ? S.expTotal[i] : 0, iNow = i >= 0 ? S.income[i] : 0;
+  const net = iNow - eNow;
+  const rate = iNow ? Math.round(net / iNow * 100) : null;
+  const prevI = i > 0 ? S.expTotal[i - 1] : null;
+  $("expStats").innerHTML = `
+    <div class="stat"><div class="lab">今月の支出</div><div class="val">${yen(eNow)}<span class="u">円</span></div>
+      <div class="note">${prevI == null ? "&nbsp;" : "先月 " + yen(prevI) + " 円"}</div></div>
+    <div class="stat"><div class="lab">今月の収入</div><div class="val">${yen(iNow)}<span class="u">円</span></div>
+      <div class="note">${cur.replace("-", "/")}</div></div>
+    <div class="stat"><div class="lab">収入 − 支出</div>
+      <div class="val ${net >= 0 ? "up" : "down"}">${net >= 0 ? "+" : "−"}${yen(Math.abs(net))}<span class="u">円</span></div>
+      <div class="note">${rate == null ? "&nbsp;" : "貯蓄率 " + rate + "%"}</div></div>
+    <div class="stat"><div class="lab">月平均の支出</div>
+      <div class="val">${yen(Math.round(S.expTotal.reduce((s, v) => s + v, 0) / S.months.length))}<span class="u">円</span></div>
+      <div class="note">${S.months.length}ヶ月の平均</div></div>`;
+
+  $("expLegend").innerHTML = S.order.map((c, s) =>
+    `<span><i style="background:${HEX[s % 8]}"></i>${esc(c)}</span>`).join("")
+    + `<span><i style="background:var(--text)"></i>収入</span>`;
+
+  const sum = Object.values(S.folded).reduce((a, b) => a + b, 0);
+  $("expCatCap").textContent = `${S.months[0].replace("-","/")} 〜 ${S.months[S.months.length-1].replace("-","/")} の合計 ${yen(sum)}円`
+    + `（月平均 ${yen(Math.round(sum / S.months.length))}円）`;
+  const max = Math.max(...Object.values(S.folded), 1);
+  $("expCats").innerHTML = S.order.map((c, s) => {
+    const v = S.folded[c]; if(!v) return "";
+    return `<div class="catrow">
+      <span class="nm"><i style="background:${HEX[s % 8]}"></i>${esc(c)}</span>
+      <span class="bar"><span style="width:${(v / max * 100).toFixed(1)}%;background:${HEX[s % 8]}"></span></span>
+      <span class="val">${yen(Math.round(v / S.months.length))}</span>
+      <span class="pct">${(v / sum * 100).toFixed(1)}%</span></div>`;
+  }).join("") + `<p class="hint" style="margin:10px 2px 0">金額は月平均です。</p>`;
+
+  drawExpChart(S);
+}
+
+let expHot = null;
+function drawExpChart(S){
+  const svg = $("expChart");
+  const { W, H, P } = chartBox();
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const n = S.months.length;
+  const yMax = Math.max(...S.expTotal, ...S.income, 1) * 1.08;
+  const plotW = W - P.l - P.r;
+  const bw = Math.min(38, plotW / n * 0.62);
+  const X = i => P.l + plotW * (n === 1 ? 0.5 : (i + 0.5) / n);
+  const Y = v => H - P.b - v / yMax * (H - P.t - P.b);
+
+  let g = "";
+  const step = Math.pow(10, Math.floor(Math.log10(yMax / 4)));
+  const tick = [1,2,2.5,5,10].map(s => s * step).find(s => s >= yMax / 4) || 10 * step;
+  for(let v = 0; v <= yMax; v += tick){
+    g += `<line x1="${P.l}" y1="${Y(v).toFixed(1)}" x2="${W-P.r}" y2="${Y(v).toFixed(1)}" stroke="var(--grid)" stroke-width="1"/>`
+      +  `<text x="${P.l-9}" y="${(Y(v)+4).toFixed(1)}" text-anchor="end" font-size="10.5" fill="var(--dim)" style="font-variant-numeric:tabular-nums">${yen(Math.round(v/10000))}</text>`;
+  }
+  g += `<text x="${P.l-9}" y="${P.t-2}" text-anchor="end" font-size="10" fill="var(--dim)">万円</text>`;
+
+  /* 積み上げ棒。区切りは背景色2pxで抜いて、いちばん上だけ角を丸める。 */
+  for(let i = 0; i < n; i++){
+    let acc = 0;
+    const segs = S.order.map((c, s) => ({ c, s, v: S.data[i][c] })).filter(o => o.v > 0);
+    segs.forEach((o, k) => {
+      const y0 = Y(acc), y1 = Y(acc + o.v); acc += o.v;
+      const h = Math.max(1, y0 - y1), top = k === segs.length - 1;
+      g += `<rect x="${(X(i)-bw/2).toFixed(1)}" y="${y1.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}"
+             fill="${HEX[o.s % 8]}"${top ? ' rx="4" ry="4"' : ""}/>`;
+      if(k < segs.length - 1)
+        g += `<line x1="${(X(i)-bw/2).toFixed(1)}" y1="${y1.toFixed(1)}" x2="${(X(i)+bw/2).toFixed(1)}" y2="${y1.toFixed(1)}" stroke="${SURFACE}" stroke-width="2"/>`;
+    });
+  }
+  /* 収入の線 */
+  if(S.income.some(v => v)){
+    let d = "";
+    for(let i = 0; i < n; i++) d += (i ? " L " : "M ") + X(i).toFixed(1) + " " + Y(S.income[i]).toFixed(1);
+    g += `<path d="${d}" fill="none" stroke="var(--text)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    for(let i = 0; i < n; i++)
+      g += `<circle cx="${X(i).toFixed(1)}" cy="${Y(S.income[i]).toFixed(1)}" r="3.5" fill="var(--text)" stroke="${SURFACE}" stroke-width="2"/>`;
+  }
+  g += `<line x1="${P.l}" y1="${Y(0)}" x2="${W-P.r}" y2="${Y(0)}" stroke="var(--baseline)" stroke-width="1"/>`;
+  const xs = Math.max(1, Math.ceil(n / 8));
+  for(let i = 0; i < n; i += xs){
+    const [y, m] = S.months[i].split("-");
+    g += `<text x="${X(i).toFixed(1)}" y="${H-P.b+16}" text-anchor="middle" font-size="10" fill="var(--dim)">${+m === 1 ? y.slice(2) + "/" + +m : +m + "月"}</text>`;
+  }
+  g += `<g id="expHov"></g><rect x="${P.l}" y="${P.t}" width="${plotW}" height="${H-P.t-P.b}" fill="transparent" id="expHit"/>`;
+  svg.innerHTML = g;
+  expHot = { S, X, Y, n, W, H, P, bw };
+  const hit = svg.querySelector("#expHit");
+  hit.addEventListener("pointermove", onExpHover);
+  hit.addEventListener("pointerleave", () => {
+    $("expTip").style.opacity = 0; svg.querySelector("#expHov").innerHTML = "";
+  });
+}
+function onExpHover(e){
+  const { S, X, Y, n, W, H, P, bw } = expHot;
+  const svg = $("expChart"), tip = $("expTip"), card = svg.parentElement;
+  const r = svg.getBoundingClientRect();
+  const px = (e.clientX - r.left) / r.width * W;
+  let best = 0, bd = Infinity;
+  for(let i = 0; i < n; i++){ const d = Math.abs(X(i) - px); if(d < bd){ bd = d; best = i; } }
+  svg.querySelector("#expHov").innerHTML =
+    `<rect x="${(X(best)-bw/2-3).toFixed(1)}" y="${P.t}" width="${(bw+6).toFixed(1)}" height="${H-P.t-P.b}" fill="rgba(255,255,255,.06)" rx="4"/>`;
+  const rows = S.order.map((c, s) => ({ c, s, v: S.data[best][c] })).filter(o => o.v > 0).reverse();
+  const [y, m] = S.months[best].split("-");
+  tip.innerHTML = `<div class="d">${y}年${+m}月</div>
+    <div class="t"><span>支出</span><span>${yen(S.expTotal[best])} 円</span></div>`
+    + (S.income[best] ? `<div class="r"><em><i style="background:var(--text)"></i>収入</em><b>${yen(S.income[best])}</b></div>` : "")
+    + rows.map(o => `<div class="r"><em><i style="background:${HEX[o.s % 8]}"></i>${esc(o.c)}</em><b>${yen(o.v)}</b></div>`).join("");
+  tip.style.opacity = 1;
+  const cw = card.getBoundingClientRect().width;
+  const left = svg.getBoundingClientRect().left - card.getBoundingClientRect().left + X(best) / W * r.width;
+  const want = left > cw * 0.55 ? left - tip.offsetWidth - 14 : left + 14;
+  tip.style.left = Math.min(Math.max(6, want), cw - tip.offsetWidth - 6) + "px";
+  tip.style.top = (svg.getBoundingClientRect().top - card.getBoundingClientRect().top + 8) + "px";
+}
+
+/* =========================================================================
    データ（取り込み・書き出し・同期・削除）
    ========================================================================= */
 function parseCSV(text){
@@ -892,6 +1093,7 @@ function renderMonth(){
                   .reduce((s, r) => s + r.m, 0);
   $("mtotal").textContent = yen(v);
   const ds = dataSize();
+  $("logCount").textContent = `${yen(recs().filter(r => r.k === "t").length)}件`;
   $("dataCount").textContent = `${yen(recs().length)}件`;
   renderBreakdown();
   const el = $("sizeNote");
@@ -921,13 +1123,13 @@ $("tabs").addEventListener("click", e => {
   document.querySelectorAll(".screen").forEach(s => s.classList.toggle("on", s.id === b.dataset.s));
   if(b.dataset.s === "s-fixed") renderFixed();
   if(b.dataset.s === "s-assets") assetMode === "chart" ? renderChart() : renderAssetEdit();
-  if(b.dataset.s === "s-log") renderLog();
+  if(b.dataset.s === "s-log") logMode === "chart" ? renderExp() : renderLog();
 });
 function renderAll(){
   renderDate(); renderCats(); renderMonth();
   if($("s-fixed").classList.contains("on")) renderFixed();
   if($("s-assets").classList.contains("on")) assetMode === "chart" ? renderChart() : renderAssetEdit();
-  if($("s-log").classList.contains("on")) renderLog();
+  if($("s-log").classList.contains("on")) logMode === "chart" ? renderExp() : renderLog();
 }
 /* 他の端末から同期で降ってきたら、キャッシュを捨てて描き直す */
 window.addEventListener("money:remote", () => { _map = null; renderAll(); });
