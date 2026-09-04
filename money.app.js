@@ -186,18 +186,25 @@ $("pad").addEventListener("click", e => {
   else if(digits.length < 8) digits = (digits + k).replace(/^0+(?=\d)/, "");
   renderAmt();
 });
+/* 日付は「‹ ›」で前後日、チップのタップで端末のカレンダーを開く。
+   以前は非表示の input を作って showPicker() を呼んでいたが、iOS で開かなかった。 */
+const shiftDay = (d, n) => {
+  const t = new Date(d + "T00:00");
+  t.setDate(t.getDate() + n);
+  return t.getFullYear() + "-" + String(t.getMonth()+1).padStart(2,"0") + "-" + String(t.getDate()).padStart(2,"0");
+};
 function renderDate(){
   const [, m, d] = date.split("-");
-  $("dateLbl").textContent = date === today() ? "今日" : `${+m}/${+d}(${wd(date)})`;
+  const isToday = date === today();
+  $("dateLbl").textContent = isToday ? "今日" : `${+m}/${+d}（${wd(date)}）`;
+  $("dateChip").classList.toggle("off", !isToday);
+  $("dayToday").hidden = isToday;
+  $("dateInput").value = date;
 }
-$("dateBtn").addEventListener("click", () => {
-  const i = document.createElement("input");
-  i.type = "date"; i.value = date;
-  i.style.cssText = "position:fixed;opacity:0;pointer-events:none";
-  document.body.appendChild(i);
-  i.addEventListener("change", () => { if(i.value){ date = i.value; renderDate(); } i.remove(); });
-  i.showPicker ? i.showPicker() : i.click();
-});
+$("dateInput").addEventListener("change", e => { if(e.target.value){ date = e.target.value; renderDate(); } });
+$("dayPrev").addEventListener("click", () => { date = shiftDay(date, -1); renderDate(); });
+$("dayNext").addEventListener("click", () => { date = shiftDay(date, +1); renderDate(); });
+$("dayToday").addEventListener("click", () => { date = today(); renderDate(); });
 $("type").addEventListener("click", e => {
   const b = e.target.closest("button"); if(!b) return;
   type = b.dataset.t; level1 = null; searchQ = "";
@@ -659,7 +666,7 @@ function renderLog(){
   const rs = recs().filter(r => r.k === "t").reverse().sort((a, b) => b.d.localeCompare(a.d));
   $("logCount").textContent = rs.length ? `${yen(rs.length)}件` : "";
   if(!rs.length){
-    $("logBody").innerHTML = `<p class="empty">まだ記録がありません。<br>入力タブで金額を打ち、大項目→内容の順に選ぶと保存されます。</p>`;
+    $("logBody").innerHTML = `<p class="empty">まだ記録がありません。<br>入力タブで金額を打ち、内容を選ぶと保存されます。</p>`;
     return;
   }
   let html = "", cur = "";
@@ -670,19 +677,84 @@ function renderLog(){
       html += `<div class="day">${cur.replace(/-/g,"/")}（${wd(cur)}）　支出 ${yen(sum)}円</div>`;
     }
     const col = rType(r) === "i" ? "var(--income)" : rKind(r) === I ? "var(--invest)" : "var(--accent)";
-    html += `<div class="rec"><span class="dot" style="background:${col}"></span>
+    html += `<div class="rec" data-e="${esc(r.id)}" role="button" tabindex="0">
+      <span class="dot" style="background:${col}"></span>
       <span class="t"><b>${esc(r.s)}</b><small>${esc(rCat(r))}${r.n ? " ・ " + esc(r.n) : ""}</small></span>
       <span class="m">${rType(r) === "i" ? "+" : ""}${yen(r.m)}</span>
-      <button class="x" data-x="${esc(r.id)}" aria-label="削除">✕</button></div>`;
+      <span class="x" aria-hidden="true">›</span></div>`;
   }
   $("logBody").innerHTML = html;
   if(rs.length > 300) $("logBody").insertAdjacentHTML("beforeend",
     `<p class="hint" style="text-align:center;margin-top:14px">直近300件を表示しています</p>`);
 }
 $("logBody").addEventListener("click", e => {
-  const b = e.target.closest("[data-x]"); if(!b) return;
-  put(recs().filter(r => String(r.id) !== b.dataset.x));
-  renderLog(); renderMonth();
+  const row = e.target.closest("[data-e]"); if(!row) return;
+  openEdit(row.dataset.e);
+});
+
+/* =========================================================================
+   記録の修正シート
+   ========================================================================= */
+let editId = null;
+function openEdit(id){
+  const r = recs().find(x => String(x.id) === String(id));
+  if(!r) return;
+  editId = String(id);
+  const inc = rType(r) === "i";
+  $("eKind").textContent = inc ? "収入の記録" : "支出の記録";
+  $("eDate").value = r.d;
+  $("eAmt").value = yen(r.m);
+  $("eSub").value = r.s;
+  $("eNote").value = r.n || "";
+  $("eCatField").hidden = inc;
+  if(!inc){
+    const cats = Object.keys(catTree());
+    const cur = rCat(r);
+    if(cur && !cats.includes(cur)) cats.push(cur);
+    $("eCat").innerHTML = cats.map(c => `<option value="${esc(c)}"${c === cur ? " selected" : ""}>${esc(c)}</option>`).join("");
+  }
+  $("eSubList").innerHTML = (inc ? incomeItems() : allItems())
+    .map(x => `<option value="${esc(x.s)}">`).join("");
+  $("editSheet").hidden = false;
+}
+function closeEdit(){ $("editSheet").hidden = true; editId = null; }
+$("editBg").addEventListener("click", closeEdit);
+$("eCancel").addEventListener("click", closeEdit);
+/* 内容を書き換えたら、既に知っている内容なら大項目を自動で合わせる */
+$("eSub").addEventListener("input", () => {
+  const hit = allItems().find(x => x.s === $("eSub").value.trim());
+  if(hit && !$("eCatField").hidden) $("eCat").value = hit.c;
+});
+$("eAmt").addEventListener("input", e => { const n = numOf(e.target); e.target.value = n ? yen(n) : ""; });
+$("eSave").addEventListener("click", () => {
+  const a = recs();
+  const r = a.find(x => String(x.id) === editId);
+  if(!r) return closeEdit();
+  const sub = $("eSub").value.trim(), amt = numOf($("eAmt"));
+  if(!sub) return toast("内容を入れてください", false);
+  if(!amt) return toast("金額を入れてください", false);
+  r.d = $("eDate").value || r.d;
+  r.m = amt;
+  r.s = sub;
+  const note = $("eNote").value.trim();
+  if(note) r.n = note; else delete r.n;
+  if(rType(r) !== "i"){
+    const cat = $("eCat").value;
+    const hit = (catTree()[cat] || []).find(x => x.s === sub);
+    learn(a, sub, cat, hit ? hit.g : V, hit ? hit.f : M4);
+    delete r.c; delete r.g; delete r.f;   // 分類はマスタ側に寄せる
+  }
+  put(a); lastIds = [];
+  closeEdit(); renderLog(); renderMonth();
+  toast(`${sub} を修正しました`, false);
+});
+$("eDelete").addEventListener("click", () => {
+  const r = recs().find(x => String(x.id) === editId);
+  if(!r) return closeEdit();
+  if(!confirm(`${r.d.replace(/-/g,"/")} の「${r.s}」${yen(r.m)}円 を削除します。よろしいですか？`)) return;
+  put(recs().filter(x => String(x.id) !== editId));
+  lastIds = []; closeEdit(); renderLog(); renderMonth();
+  toast("削除しました", false);
 });
 
 /* =========================================================================

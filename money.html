@@ -26,7 +26,13 @@
         <span class="amt zero" id="amt">0</span><span class="yen">円</span>
         <span class="amthint" id="amtHint">タップして入力</span>
       </button>
-      <button class="datebtn" id="dateBtn">📅 <b id="dateLbl">今日</b></button>
+    </div>
+    <div class="daterow">
+      <button class="daybtn" id="dayPrev" aria-label="前の日">‹</button>
+      <label class="datebtn" id="dateChip">📅 <b id="dateLbl">今日</b>
+        <input type="date" id="dateInput" aria-label="日付を選ぶ"></label>
+      <button class="daybtn" id="dayNext" aria-label="次の日">›</button>
+      <button class="daytoday" id="dayToday" hidden>今日に戻す</button>
     </div>
     <input class="memo" id="memo" placeholder="お店・補足（任意）" autocomplete="off">
   </div>
@@ -192,6 +198,26 @@ money_targets_2027.csv  account_id,target_yen</p>
 </nav>
 
 <div class="toast" id="toast"><span id="toastMsg"></span><button id="undo">取り消す</button></div>
+
+<!-- 記録の修正シート -->
+<div class="sheet" id="editSheet" hidden>
+  <div class="sheet-bg" id="editBg"></div>
+  <div class="sheet-body">
+    <h2>記録を修正</h2>
+    <p class="sub" id="eKind"></p>
+    <label class="field"><span>日付</span><input type="date" id="eDate"></label>
+    <label class="field"><span>金額（円）</span><input type="text" inputmode="numeric" id="eAmt"></label>
+    <label class="field" id="eCatField"><span>大項目</span><select id="eCat"></select></label>
+    <label class="field"><span>内容</span><input type="text" id="eSub" list="eSubList" autocomplete="off">
+      <datalist id="eSubList"></datalist></label>
+    <label class="field"><span>お店・補足</span><input type="text" id="eNote" autocomplete="off"></label>
+    <div class="sheet-actions">
+      <button class="destructive" id="eDelete">削除</button>
+      <button class="primary" id="eSave">保存</button>
+    </div>
+    <button class="secondary" id="eCancel">キャンセル</button>
+  </div>
+</div>
 
 <script src="money.app.js"></script>
 <script>window.SYNC_APP = "money";</script>
