@@ -34,8 +34,13 @@ window.SYNC_FINGERPRINT = r => r.id || JSON.stringify(r);
    ------------------------------------------------------------------------ */
 
 let _map = null;
+/* 分類マスタ {k:"map"} は1本のつもりだが、端末ごとに作られたものが
+   同期の和集合マージで複数残ることがある。1本目だけ見ると大項目が消えるので、全部重ねて読む。 */
 function clsMap(){
-  if(!_map){ const r = recs().find(x => x.k === "map"); _map = (r && r.v) || {}; }
+  if(!_map){
+    _map = {};
+    for(const r of recs()) if(r.k === "map" && r.v) Object.assign(_map, r.v);
+  }
   return _map;
 }
 /* 取引レコードから 種別/大項目/中項目/リベ分類 を取り出す（古い形の c,g,f も読める） */
@@ -49,8 +54,12 @@ const rCat = r => cls(r)[0], rKind = r => cls(r)[1], rFreq = r => cls(r)[2];
 /* 新しい内容を使ったら分類マスタに覚えさせる */
 function learn(a, sub, cat, kind, freq){
   if(!sub || !cat) return;
-  let m = a.find(x => x.k === "map");
-  if(!m){ m = { k:"map", id:uid(), v:{} }; a.push(m); }
+  const maps = a.filter(x => x.k === "map");
+  if(!maps.length){ a.push({ k:"map", id:uid(), v:{ [sub]:[cat, kind, freq] } }); return; }
+  /* 一番中身の多いものを本体にして、他のマスタの中身も吸い上げておく */
+  const m = maps.reduce((x, y) => Object.keys(y.v || {}).length > Object.keys(x.v || {}).length ? y : x);
+  m.v ||= {};
+  maps.forEach(o => { if(o !== m) Object.assign(m.v, o.v || {}); });
   m.v[sub] = [cat, kind, freq];
 }
 
@@ -303,8 +312,9 @@ function commit(sub, cat, kind, freq){
   bumpFav(sub); lastIds = [rec.id];
   toast(`${sub} ${yen(rec.m)}円 を記録`, true);
   digits = ""; level1 = null; searchQ = ""; $("memo").value = "";
+  date = today();          // 次の入力は必ず今日から始める
   padOpen(false);
-  renderCats(); renderMonth();
+  renderDate(); renderCats(); renderMonth();
 }
 
 /* =========================================================================
