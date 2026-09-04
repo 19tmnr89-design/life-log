@@ -75,7 +75,7 @@ button,a,label,.tile{touch-action:manipulation}
 .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
 .tile{background:var(--panel);border:1px solid var(--line);border-radius:12px;
   padding:12px 6px;font-size:12.5px;font-weight:600;text-align:center;
-  min-height:54px;display:flex;align-items:center;justify-content:center;
+  min-height:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
   line-height:1.25;transition:transform .08s,background .12s}
 .tile:active{transform:scale(.95);background:var(--panel2)}
 .tile.lv1{background:var(--panel2)}
@@ -88,6 +88,16 @@ button,a,label,.tile{touch-action:manipulation}
 .freeform button{background:var(--accent);color:var(--accent-ink);font-weight:700;
   border-radius:11px;padding:0 18px;font-size:14px}
 .needamt{font-size:11.5px;color:var(--dim);text-align:center;padding:8px 0 2px}
+.sec{font-size:10.5px;font-weight:700;color:var(--dim);letter-spacing:.09em;margin:15px 2px 8px}
+.sec:first-of-type{margin-top:2px}
+.searchbox{position:relative;margin:0 0 10px}
+.searchbox input{width:100%;background:var(--panel);border:1px solid var(--line);
+  border-radius:11px;padding:10px 12px 10px 34px;font-size:13px}
+.searchbox .ic{position:absolute;left:12px;top:50%;transform:translateY(-50%);
+  color:var(--dim);font-size:13px;pointer-events:none}
+.searchbox .clr{position:absolute;right:6px;top:50%;transform:translateY(-50%);
+  color:var(--dim);font-size:15px;padding:4px 8px}
+.tile small{display:block;font-size:9.5px;color:var(--dim);font-weight:400;margin-top:3px}
 
 /* ---- テンキー（金額入力のときだけ下からせり上がる） ---- */
 .pad{position:fixed;left:0;right:0;bottom:0;max-width:560px;margin:0 auto;z-index:25;
@@ -116,6 +126,15 @@ button,a,label,.tile{touch-action:manipulation}
 .total .l{font-size:12px;color:var(--sub)}
 .total .v{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
 .total .v small{font-size:12px;color:var(--sub);margin-left:3px}
+.stateline{display:flex;align-items:center;gap:8px;font-size:12px;line-height:1.5;
+  padding:10px 12px;border-radius:11px;margin-bottom:12px;border:1px solid}
+.stateline b{font-weight:700}
+.stateline.done{color:var(--income);border-color:#1c5e3a;background:rgba(47,191,113,.09)}
+.stateline.todo{color:var(--invest);border-color:#5a4718;background:rgba(201,133,0,.09)}
+.top .meta .badge{display:inline-block;margin-left:6px;padding:2px 7px;border-radius:999px;
+  font-size:10.5px;font-weight:700}
+.top .meta .badge.done{color:var(--income);background:rgba(47,191,113,.14)}
+.top .meta .badge.todo{color:var(--invest);background:rgba(201,133,0,.16)}
 .savebar{position:sticky;bottom:0;padding:10px 0 calc(6px + var(--safe-b));background:var(--bg)}
 .savebar::before{content:"";position:absolute;left:0;right:0;bottom:100%;height:24px;
   background:linear-gradient(to top,var(--bg),rgba(18,20,28,0));pointer-events:none}

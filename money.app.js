@@ -81,6 +81,7 @@ const SURFACE = "#1c1f2b";
 /* ---- 状態 ---- */
 let type = "e", digits = "", date = today(), lastIds = [], level1 = null;
 let fMonth = today().slice(0, 7), chartMonths = 0, assetMode = "chart";
+let searchQ = "";
 
 const favs = () => { try { return JSON.parse(localStorage.getItem(FAV) || "{}"); } catch { return {}; } };
 const bumpFav = n => { const f = favs(); f[n] = (f[n] || 0) + 1; localStorage.setItem(FAV, JSON.stringify(f)); };
@@ -106,6 +107,12 @@ function catTree(){
   }
   for(const k in t) t[k].sort((a, b) => b.n - a.n);
   return t;
+}
+/* 大項目をまたいで、内容を使用頻度順に平らに並べる（1段目の「よく使う」と検索用） */
+function allItems(){
+  const t = catTree(), out = [];
+  for(const [c, list] of Object.entries(t)) list.forEach(x => out.push({ ...x, c }));
+  return out.sort((a, b) => b.n - a.n);
 }
 function incomeItems(){
   const f = favs(), seen = new Map();
@@ -193,7 +200,7 @@ $("dateBtn").addEventListener("click", () => {
 });
 $("type").addEventListener("click", e => {
   const b = e.target.closest("button"); if(!b) return;
-  type = b.dataset.t; level1 = null;
+  type = b.dataset.t; level1 = null; searchQ = "";
   [...e.currentTarget.children].forEach(x => x.setAttribute("aria-pressed", x === b));
   renderCats();
 });
@@ -206,32 +213,65 @@ const freeHTML = () => `<div class="freeform">
 const needHTML = () => `<p class="needamt" id="needAmt">先に金額を入力してください</p>`;
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 
+/* 内容のタイル。大項目を data-c に持たせるので、押した時点で大項目も決まる。 */
+const itemTilesHTML = (items, showCat) => `<div class="tiles">` + items.map(x =>
+  `<button class="tile${x.g === I ? " inv" : ""}" data-n="${esc(x.s)}" data-c="${esc(x.c)}" data-lv1="0">${esc(x.s)}`
+  + (showCat ? `<small>${esc(x.c)}</small>` : "") + `</button>`).join("") + `</div>`;
+const searchHTML = () => `<div class="searchbox"><span class="ic">🔍</span>
+  <input id="catSearch" placeholder="内容で探す（例: ケーキ）" autocomplete="off" value="${esc(searchQ)}">
+  ${searchQ ? `<button class="clr" id="catClear" aria-label="消す">✕</button>` : ""}</div>`;
+
 function renderCats(){
   const box = $("cats"), tree = catTree();
   if(type === "i"){
     box.innerHTML = tilesHTML(incomeItems().map(x => x.s), "inc") + freeHTML() + needHTML();
   } else if(!level1){
-    box.innerHTML = `<div class="crumb"><span class="now">どの大項目？</span><span class="step">1 / 2</span></div>`
-      + tilesHTML(Object.keys(tree), "lv1", true) + needHTML();
+    const all = allItems(), q = searchQ.trim();
+    if(q){
+      const hits = all.filter(x => x.s.includes(q) || x.c.includes(q)).slice(0, 30);
+      box.innerHTML = searchHTML()
+        + (hits.length ? itemTilesHTML(hits, true)
+                       : `<p class="needamt">「${esc(q)}」は見つかりませんでした。下の欄に入れると新しい内容として記録できます。</p>`)
+        + `<h2 class="sec">大項目から選ぶ</h2>` + tilesHTML(Object.keys(tree), "lv1", true)
+        + freeHTML() + needHTML();
+    } else {
+      /* 定例タブでまとめて入れる項目は、日々の入力では邪魔なので除く */
+      const fixed = new Set(fixedItems().map(r => r.s));
+      box.innerHTML = searchHTML()
+        + `<h2 class="sec">よく使う</h2>` + itemTilesHTML(all.filter(x => !fixed.has(x.s)).slice(0, 12), true)
+        + `<h2 class="sec">大項目から選ぶ</h2>` + tilesHTML(Object.keys(tree), "lv1", true)
+        + needHTML();
+    }
   } else {
     box.innerHTML = `<div class="crumb"><button id="back">‹ 大項目</button>
       <span class="now">${esc(level1)}</span><span class="step">2 / 2</span></div>`
-      + tilesHTML((tree[level1] || []).map(x => x.s), level1 === "投資貯金" ? "inv" : "")
+      + itemTilesHTML((tree[level1] || []).map(x => ({ ...x, c:level1 })), false)
       + freeHTML() + needHTML();
     $("back").addEventListener("click", () => { level1 = null; renderCats(); });
   }
   renderAmt();
 }
 $("cats").addEventListener("click", e => {
+  if(e.target.id === "catClear"){ searchQ = ""; renderCats(); return; }
   const b = e.target.closest(".tile");
   if(b && !b.disabled){
     if(b.dataset.lv1 === "1"){ level1 = b.dataset.n; renderCats(); return; }
     const name = b.dataset.n;
     if(type === "i") return commit(name, "収入", "収入", "");
-    const hit = (catTree()[level1] || []).find(x => x.s === name);
-    return commit(name, level1, hit ? hit.g : V, hit ? hit.f : M4);
+    const cat = b.dataset.c || level1;
+    const hit = (catTree()[cat] || []).find(x => x.s === name);
+    return commit(name, cat, hit ? hit.g : V, hit ? hit.f : M4);
   }
   if(e.target.id === "freeSave") saveFree();
+});
+/* 検索欄。打つたびに絞り込むが、再描画してもフォーカスとカーソル位置は保つ。 */
+$("cats").addEventListener("input", e => {
+  if(e.target.id !== "catSearch") return;
+  const pos = e.target.selectionStart;
+  searchQ = e.target.value;
+  renderCats();
+  const el = $("catSearch");
+  if(el){ el.focus(); try { el.setSelectionRange(pos, pos); } catch {} }
 });
 $("cats").addEventListener("keydown", e => { if(e.key === "Enter" && e.target.id === "freeName") saveFree(); });
 
@@ -240,6 +280,9 @@ function saveFree(){
   if(!name) return;
   if(!+digits) return toast("先に金額を入力してください", false);
   if(type === "i") return commit(name, "収入", "収入", "");
+  const known = allItems().find(x => x.s === name);     // 既にある内容なら大項目を引き継ぐ
+  if(known) return commit(known.s, known.c, known.g, known.f);
+  if(!level1) return toast("先に大項目を選んでください", false);
   commit(name, level1, level1 === "投資貯金" ? I : V, M4);
 }
 function commit(sub, cat, kind, freq){
@@ -252,7 +295,7 @@ function commit(sub, cat, kind, freq){
   put(a);
   bumpFav(sub); lastIds = [rec.id];
   toast(`${sub} ${yen(rec.m)}円 を記録`, true);
-  digits = ""; level1 = null; $("memo").value = "";
+  digits = ""; level1 = null; searchQ = ""; $("memo").value = "";
   padOpen(false);
   renderCats(); renderMonth();
 }
@@ -392,10 +435,22 @@ function assetSeries(){
   return { dates, order, byDate,
            total: dates.map(d => Object.values(byDate[d]).reduce((s, v) => s + v, 0)) };
 }
-function renderAssetHeader(){
+/* 資産は月1回の入力なので、今月ぶんを入れたかどうかが一目で分かるようにする */
+function assetMonthState(){
+  const cur = today().slice(0, 7);
   const rows = recs().filter(r => r.k === "a");
-  const d = rows.length ? rows.map(r => r.d).sort().pop() : null;
-  $("asOf").textContent = d ? d.slice(0, 7).replace("-", "/") + " 時点" : "未入力";
+  const months = [...new Set(rows.map(r => r.d.slice(0, 7)))].sort();
+  return {
+    cur,
+    done: rows.some(r => r.d === cur + "-01"),
+    prev: months.filter(m => m < cur).pop() || null
+  };
+}
+const jpMonth = ym => { const [y, m] = ym.split("-"); return `${y}年${+m}月`; };
+function renderAssetHeader(){
+  const { cur, done } = assetMonthState();
+  $("asOf").innerHTML = `${+cur.slice(5)}月<span class="badge ${done ? "done" : "todo"}">`
+    + (done ? "入力済み" : "未入力") + `</span>`;
 }
 function renderChart(){
   renderAssetHeader();
@@ -546,6 +601,12 @@ function renderAssetEdit(){
   renderAssetHeader();
   const accs = accounts().filter(a => a.active !== 0);
   const { date:d, map } = lastAssetSnapshot();
+  const st = assetMonthState();
+  $("assetState").innerHTML = st.done
+    ? `<div class="stateline done">✅ <span><b>${jpMonth(st.cur)}分は入力済みです。</b>保存し直すと、この月の記録を入れ替えます。</span></div>`
+    : `<div class="stateline todo">📝 <span><b>${jpMonth(st.cur)}分はまだ入力していません。</b>`
+      + (st.prev ? `前回の入力は ${jpMonth(st.prev)} です。` : "") + `</span></div>`;
+  $("saveAssets").textContent = `${jpMonth(st.cur)}分として保存`;
   $("aHint").textContent = !accs.length
     ? "口座がまだ登録されていません。データタブで money_accounts.csv を取り込んでください。"
     : d ? "前回入力した値が入っています。変わった口座だけ上書きして保存してください。単位は万円です。"
