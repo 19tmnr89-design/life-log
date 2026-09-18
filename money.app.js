@@ -399,7 +399,8 @@ function renderFixed(){
         <input type="text" inputmode="numeric" data-f="${esc(r.s)}" data-g="${esc(b)}" data-t="${rType(r)}"
                value="${v === "" ? "" : yen(v)}" placeholder="0">
         <span class="u">円</span>
-        <button class="pin" data-hide="${esc(r.s)}" title="定例から外す">✕</button></div>`;
+        <button class="pin" data-zero="${esc(r.s)}" title="金額を0にする"
+                aria-label="${esc(r.s)}の金額を0にする">✕</button></div>`;
     }).join("") + `</div>`).join("");
   recalcFixed();
 }
@@ -420,11 +421,12 @@ $("fixList").addEventListener("input", e => {
   if(e.target.matches("input")){ const n = numOf(e.target); e.target.value = n ? yen(n) : ""; }
   recalcFixed();
 });
+/* 各行の ✕ は金額を0に戻すだけ。0のままの項目は記録されないので、
+   その月だけ見送りたいときに使う。項目そのものの出し入れは「定例項目の変更」から。 */
 $("fixList").addEventListener("click", e => {
-  const b = e.target.closest("[data-hide]"); if(!b) return;
-  updateCfg(c => { c.hide = [...new Set([...c.hide, b.dataset.hide])];
-                   c.pin = c.pin.filter(x => x !== b.dataset.hide); });
-  renderFixed();
+  const b = e.target.closest("[data-zero]"); if(!b) return;
+  const i = b.closest(".row").querySelector("input");
+  if(i){ i.value = ""; recalcFixed(); }
 });
 function updateCfg(fn){
   const a = recs();
@@ -435,25 +437,40 @@ function updateCfg(fn){
 $("fPrev").addEventListener("click", () => { fMonth = shiftMonth(fMonth, -1); renderFixed(); });
 $("fNext").addEventListener("click", () => { fMonth = shiftMonth(fMonth, +1); renderFixed(); });
 
+/* 定例に並べる項目そのものを出し入れする画面。
+   押すたびに一覧に反映して開いたままにしておく（まとめて直せるように）。 */
+function renderFixEdit(){
+  const inList = fixedItems().map(r => r.s);
+  const has = new Set(inList);
+  const rest = new Set();
+  recs().forEach(r => { if(r.k === "t" && !has.has(r.s)) rest.add(r.s); });
+  Object.values(catTree()).flat().forEach(x => { if(!has.has(x.s)) rest.add(x.s); });
+  incomeItems().forEach(x => { if(!has.has(x.s)) rest.add(x.s); });
+  $("addPanel").innerHTML =
+    `<p class="hint">定例に並べる項目を決めます。その月だけ記録しないなら、
+       ここではなく一覧の ✕ で金額を0にしてください。</p>
+     <div class="sec">いまの定例（${inList.length}件）</div>
+     <div class="chips">${inList.map(s =>
+        `<button class="chip on" data-out="${esc(s)}">${esc(s)}<b>✕</b></button>`).join("")
+        || `<span class="hint">まだありません</span>`}</div>
+     <div class="sec">追加できる項目（${rest.size}件）</div>
+     <div class="chips">${[...rest].map(s =>
+        `<button class="chip" data-in="${esc(s)}"><b>＋</b>${esc(s)}</button>`).join("")}</div>`;
+}
 $("addFixed").addEventListener("click", () => {
-  const panel = $("addPanel");
-  if(!panel.hidden){ panel.hidden = true; return; }
-  const inList = new Set(fixedItems().map(r => r.s));
-  const all = new Set();
-  recs().forEach(r => { if(r.k === "t" && !inList.has(r.s)) all.add(r.s); });
-  Object.values(catTree()).flat().forEach(x => { if(!inList.has(x.s)) all.add(x.s); });
-  incomeItems().forEach(x => { if(!inList.has(x.s)) all.add(x.s); });
-  panel.innerHTML = `<p class="hint">定例に加える項目を選んでください。</p>`
-    + tilesHTML([...all], "");
-  panel.hidden = false;
-  panel.scrollIntoView({ behavior:"smooth", block:"nearest" });
+  const panel = $("addPanel"), open = panel.hidden;
+  panel.hidden = !open;
+  $("addFixed").textContent = open ? "変更を終える" : "定例項目の変更";
+  if(open){ renderFixEdit(); panel.scrollIntoView({ behavior:"smooth", block:"nearest" }); }
 });
 $("addPanel").addEventListener("click", e => {
-  const b = e.target.closest(".tile"); if(!b) return;
-  updateCfg(c => { c.pin = [...new Set([...c.pin, b.dataset.n])];
-                   c.hide = c.hide.filter(x => x !== b.dataset.n); });
-  $("addPanel").hidden = true;
-  renderFixed();
+  const out = e.target.closest("[data-out]"), add = e.target.closest("[data-in]");
+  if(out) updateCfg(c => { c.hide = [...new Set([...c.hide, out.dataset.out])];
+                           c.pin = c.pin.filter(x => x !== out.dataset.out); });
+  else if(add) updateCfg(c => { c.pin = [...new Set([...c.pin, add.dataset.in])];
+                                c.hide = c.hide.filter(x => x !== add.dataset.in); });
+  else return;
+  renderFixed(); renderFixEdit();
 });
 
 $("saveFixed").addEventListener("click", () => {
