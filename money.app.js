@@ -143,30 +143,49 @@ function cfgFixed(){
   return recs().find(r => r.k === "cfg" && r.key === "fixed") || { pin:[], hide:[] };
 }
 /* 「定例」の判定
-   直近12ヶ月を見て、毎月20日前後(18-22日)に出ていて、かつ月1回程度しか出ない項目。
-   外食や食料品のように月に何度も記録する費目は、20日に出ていても定例には入れない。 */
+   直近13ヶ月を見て、毎月20日前後(16-25日)に繰り返し出ていて、かつ月1回程度しか出ない項目。
+   外食や食料品のように月に何度も記録する費目は、20日に出ていても定例には入れない。
+
+   以前は「12ヶ月中10ヶ月以上」という厳しい条件だったため、記録を1〜2ヶ月飛ばしたり
+   取り込んだ過去データが古くなるだけで一覧がまるごと空になり、毎回1から設定し直す
+   はめになっていた。5ヶ月以上に緩め、さらに下の2段構えで空にならないようにしている。 */
+const monthDiff = (a, b) => { const [ya, ma] = a.split("-").map(Number), [yb, mb] = b.split("-").map(Number);
+  return (yb - ya) * 12 + (mb - ma); };
 function fixedItems(){
   const rs = recs().filter(r => r.k === "t").sort((a, b) => a.d.localeCompare(b.d));
   const cfg = cfgFixed();
   const last = rs.length ? rs[rs.length - 1].d.slice(0, 7) : today().slice(0, 7);
-  const from = shiftMonth(last, -11) + "-01";
+  const from = shiftMonth(last, -12) + "-01";
+  const near = d => { const day = +d.slice(8, 10); return day >= 16 && day <= 25; };
   const acc = new Map();
   for(const r of rs){
-    const e = acc.get(r.s) || { months:new Set(), all:0, rec:r };
+    const e = acc.get(r.s) || { months:new Set(), all:0, lastNear:"", rec:r };
     if(r.d >= from){
-      const day = +r.d.slice(8, 10);
-      if(day >= 18 && day <= 22) e.months.add(r.d.slice(0, 7));
+      if(near(r.d)){ e.months.add(r.d.slice(0, 7)); e.lastNear = r.d.slice(0, 7); }
       e.all++;
     }
     e.rec = r; acc.set(r.s, e);
   }
-  return [...acc.entries()]
-    .filter(([s, e]) => {
-      if(cfg.hide.includes(s)) return false;
-      if(cfg.pin.includes(s)) return true;
-      return e.months.size >= 10 && e.all <= e.months.size * 1.6;
-    })
-    .map(([s, e]) => e.rec);
+  /* 20日前後に5ヶ月以上出ていて、月1回程度で、いまも続いているもの */
+  const auto = e => e.months.size >= 5 && e.all <= e.months.size * 1.8
+                 && e.lastNear && monthDiff(e.lastNear, last) <= 3;
+  let list = [...acc.entries()].filter(([s, e]) => {
+    if(cfg.hide.includes(s)) return false;
+    if(cfg.pin.includes(s)) return true;
+    return auto(e);
+  });
+  /* それでも空なら、20日前後の記録がある直近の月をそのまま雛形にする。
+     しばらく間が空いても、前回まとめて入れた顔ぶれがそのまま出てくるようにするため。 */
+  if(!list.length){
+    const block = rs.filter(r => near(r.d));
+    if(block.length){
+      const ym = block[block.length - 1].d.slice(0, 7), seen = new Set();
+      list = block.filter(r => r.d.slice(0, 7) === ym && !cfg.hide.includes(r.s)
+                            && !seen.has(r.s) && seen.add(r.s))
+                  .map(r => [r.s, acc.get(r.s)]);
+    }
+  }
+  return list.map(([s, e]) => e.rec);
 }
 const bucketOf = r => rType(r) === "i" ? "収入" : rKind(r) === T ? "税金・社会保険"
                     : rKind(r) === I ? "投資・貯蓄" : "固定費";
@@ -340,10 +359,15 @@ function commit(sub, cat, kind, freq){
    定例
    ========================================================================= */
 const numOf = el => +String(el.value).replace(/[^0-9]/g, "") || 0;
+/* 定例の初期値。その月より前の最新の金額を使う。
+   （新しく足した項目など）前の記録が無ければ、期間を問わず最新の記録から持ってくる。 */
 function lastAmount(sub, beforeYm){
-  const rows = recs().filter(r => r.k === "t" && r.s === sub && r.d.slice(0, 7) < beforeYm)
+  const rows = recs().filter(r => r.k === "t" && r.s === sub)
                      .sort((a, b) => a.d.localeCompare(b.d));
-  return rows.length ? rows[rows.length - 1].m : null;
+  if(!rows.length) return null;
+  const before = rows.filter(r => r.d.slice(0, 7) < beforeYm);
+  const src = (before.length ? before : rows).slice(-1)[0];
+  return { m:src.m, d:src.d };
 }
 function renderFixed(){
   const d = `${fMonth}-20`, [y, m] = fMonth.split("-");
@@ -354,7 +378,7 @@ function renderFixed(){
   $("fHint").textContent = !items.length
     ? "まだ定例の項目がありません。毎月20日ごろに繰り返し記録している項目が自動でここに並びます。「定例に項目を追加」からも足せます。"
     : done ? "この月はすでに記録済みです。金額を直して押し直すと、この日付の記録を入れ替えます。"
-    : "前に記録した金額が入っています。変わったところだけ直して、下のボタンでまとめて記録します。0 のままの項目は記録しません。";
+    : "前回の金額が初期値として入っています。変わったところだけ直して、下のボタンでまとめて記録します。0 のままの項目は記録しません。";
 
   const cur = {};
   if(done) recs().filter(r => r.k === "t" && r.d === d).forEach(r => cur[r.s] = r.m);
@@ -364,9 +388,14 @@ function renderFixed(){
   $("fixList").innerHTML = BUCKETS.filter(b => byBucket[b]).map(b => `
     <div class="grp2"><h3>${b}<em data-fsub="${esc(b)}">0 円</em></h3>` +
     byBucket[b].map(r => {
-      const v = cur[r.s] != null ? cur[r.s] : (lastAmount(r.s, fMonth) ?? "");
+      const prev = lastAmount(r.s, fMonth);
+      const v = cur[r.s] != null ? cur[r.s] : (prev ? prev.m : "");
+      /* 初期値は前月の金額なので普段は何も出さない。
+         前月より古い金額を持ってきたときだけ、いつのものか添えて注意を促す。 */
+      const stale = cur[r.s] == null && prev && monthDiff(prev.d.slice(0, 7), fMonth) > 1;
+      const src = stale ? `<small>${prev.d.slice(0, 4)}/${+prev.d.slice(5, 7)}月の金額</small>` : "";
       return `<div class="row">
-        <span class="nm">${esc(r.s)}</span>
+        <span class="nm">${esc(r.s)}${src}</span>
         <input type="text" inputmode="numeric" data-f="${esc(r.s)}" data-g="${esc(b)}" data-t="${rType(r)}"
                value="${v === "" ? "" : yen(v)}" placeholder="0">
         <span class="u">円</span>
@@ -441,6 +470,11 @@ $("saveFixed").addEventListener("click", () => {
     a.push(rec); n++;
   });
   put(a); lastIds = [];
+  /* 記録した顔ぶれを設定として覚えておく。自動判定の条件から外れても
+     一覧が勝手に空にならず、毎回1から設定し直さずに済む。 */
+  const saved = Object.keys(meta);
+  updateCfg(c => { c.pin = [...new Set([...c.pin, ...saved])];
+                   c.hide = c.hide.filter(x => !saved.includes(x)); });
   toast(`${fMonth.replace("-","/")} の定例 ${n}件を記録しました`, false);
   renderFixed(); renderMonth();
 });
