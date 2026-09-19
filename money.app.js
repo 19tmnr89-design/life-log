@@ -30,7 +30,7 @@ window.SYNC_FINGERPRINT = r => r.id || JSON.stringify(r);
    資産   {k:"a",  id, d:"YYYY-MM-01", a:口座id, m:円}
    口座   {k:"acc",id, a:口座id, name, grp:表示区分, active:1|0, ord}
    目標   {k:"tgt",id, a:口座id, m:円}
-   設定   {k:"cfg",id, key:"fixed", pin:[内容], hide:[内容]}
+   設定   {k:"cfg",id, key:"fixed", pin:[内容], hide:[内容], note:{内容:補足}}
    ------------------------------------------------------------------------ */
 
 let _map = null;
@@ -140,7 +140,7 @@ function accounts(){
   return recs().filter(r => r.k === "acc").sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0));
 }
 function cfgFixed(){
-  return recs().find(r => r.k === "cfg" && r.key === "fixed") || { pin:[], hide:[] };
+  return recs().find(r => r.k === "cfg" && r.key === "fixed") || { pin:[], hide:[], note:{} };
 }
 /* 「定例」の判定
    直近13ヶ月を見て、毎月20日前後(16-25日)に繰り返し出ていて、かつ月1回程度しか出ない項目。
@@ -378,8 +378,9 @@ function renderFixed(){
   $("fHint").textContent = !items.length
     ? "まだ定例の項目がありません。毎月20日ごろに繰り返し記録している項目が自動でここに並びます。「定例に項目を追加」からも足せます。"
     : done ? "この月はすでに記録済みです。金額を直して押し直すと、この日付の記録を入れ替えます。"
-    : "前回の金額が初期値として入っています。変わったところだけ直して、下のボタンでまとめて記録します。0 のままの項目は記録しません。";
+    : "前回の金額が初期値として入っています。変わったところだけ直して、下のボタンでまとめて記録します。0 のままの項目は記録しません。項目名を押すと補足を書けます。";
 
+  const note = cfgFixed().note || {};
   const cur = {};
   if(done) recs().filter(r => r.k === "t" && r.d === d).forEach(r => cur[r.s] = r.m);
   const byBucket = {};
@@ -394,8 +395,11 @@ function renderFixed(){
          前月より古い金額を持ってきたときだけ、いつのものか添えて注意を促す。 */
       const stale = cur[r.s] == null && prev && monthDiff(prev.d.slice(0, 7), fMonth) > 1;
       const src = stale ? `<small>${prev.d.slice(0, 4)}/${+prev.d.slice(5, 7)}月の金額</small>` : "";
+      /* 補足があるときだけ名前の下に小さく添える。無い項目はこれまでと同じ見た目。 */
+      const memo = note[r.s] ? `<small class="note">${esc(note[r.s])}</small>` : "";
       return `<div class="row">
-        <span class="nm">${esc(r.s)}${src}</span>
+        <button class="nm" data-note="${esc(r.s)}"
+                title="補足を書く">${esc(r.s)}${memo}${src}</button>
         <input type="text" inputmode="numeric" data-f="${esc(r.s)}" data-g="${esc(b)}" data-t="${rType(r)}"
                value="${v === "" ? "" : yen(v)}" placeholder="0">
         <span class="u">円</span>
@@ -404,9 +408,10 @@ function renderFixed(){
     }).join("") + `</div>`).join("");
   recalcFixed();
 }
+/* 金額欄は data-f 付きだけ。補足の入力欄を数字として拾わないよう、選択は必ず絞る。 */
 function recalcFixed(){
   const subs = {}; let inc = 0, exp = 0;
-  document.querySelectorAll("#fixList input").forEach(i => {
+  document.querySelectorAll("#fixList input[data-f]").forEach(i => {
     const v = numOf(i);
     subs[i.dataset.g] = (subs[i.dataset.g] || 0) + v;
     if(i.dataset.t === "i") inc += v; else exp += v;
@@ -418,21 +423,56 @@ function recalcFixed(){
   $("fNet").className = "v " + (net >= 0 ? "up" : "down");
 }
 $("fixList").addEventListener("input", e => {
-  if(e.target.matches("input")){ const n = numOf(e.target); e.target.value = n ? yen(n) : ""; }
+  if(!e.target.matches("input[data-f]")) return;
+  const n = numOf(e.target); e.target.value = n ? yen(n) : "";
   recalcFixed();
 });
 /* 各行の ✕ は金額を0に戻すだけ。0のままの項目は記録されないので、
    その月だけ見送りたいときに使う。項目そのものの出し入れは「定例項目の変更」から。 */
 $("fixList").addEventListener("click", e => {
-  const b = e.target.closest("[data-zero]"); if(!b) return;
-  const i = b.closest(".row").querySelector("input");
-  if(i){ i.value = ""; recalcFixed(); }
+  const z = e.target.closest("[data-zero]");
+  if(z){ const i = z.closest(".row").querySelector("input[data-f]");
+         if(i){ i.value = ""; recalcFixed(); } return; }
+  const nb = e.target.closest("[data-note]");
+  if(nb) openNote(nb);
 });
+/* 項目名を押すと、その行に補足の入力欄を出す。
+   補足は月ごとではなく項目そのものに付くので {k:"cfg"} の note に持つ
+   （取引1件ずつに持たせると Firestore の1MiB制限に効いてくるため）。
+   保存しても一覧全体は描き直さない。他の行に打ちかけの金額があると消えてしまうので。 */
+function openNote(btn){
+  const row = btn.closest(".row"), s = btn.dataset.note;
+  if(row.querySelector(".noteedit")) return;
+  const cur = (cfgFixed().note || {})[s] || "";
+  const box = document.createElement("div");
+  box.className = "noteedit";
+  box.innerHTML = `<input type="text" value="${esc(cur)}" autocomplete="off"
+                     placeholder="補足（例：サブスクの中身）">
+                   <button class="ok">OK</button>`;
+  row.appendChild(box);
+  const inp = box.querySelector("input");
+  inp.focus(); inp.setSelectionRange(cur.length, cur.length);
+  const save = () => {
+    if(!box.isConnected) return;
+    const v = inp.value.trim();
+    updateCfg(c => { c.note ||= {}; if(v) c.note[s] = v; else delete c.note[s]; });
+    const keep = btn.querySelector("small:not(.note)");
+    btn.innerHTML = esc(s) + (v ? `<small class="note">${esc(v)}</small>` : "")
+                  + (keep ? keep.outerHTML : "");
+    box.remove();
+  };
+  box.querySelector(".ok").addEventListener("click", save);
+  inp.addEventListener("keydown", ev => {
+    if(ev.key === "Enter"){ ev.preventDefault(); save(); }
+    if(ev.key === "Escape") box.remove();
+  });
+  inp.addEventListener("blur", () => setTimeout(save, 150));
+}
 function updateCfg(fn){
   const a = recs();
   let c = a.find(r => r.k === "cfg" && r.key === "fixed");
-  if(!c){ c = { k:"cfg", id:uid(), key:"fixed", pin:[], hide:[] }; a.push(c); }
-  c.pin ||= []; c.hide ||= []; fn(c); put(a);
+  if(!c){ c = { k:"cfg", id:uid(), key:"fixed", pin:[], hide:[], note:{} }; a.push(c); }
+  c.pin ||= []; c.hide ||= []; c.note ||= {}; fn(c); put(a);
 }
 $("fPrev").addEventListener("click", () => { fMonth = shiftMonth(fMonth, -1); renderFixed(); });
 $("fNext").addEventListener("click", () => { fMonth = shiftMonth(fMonth, +1); renderFixed(); });
@@ -479,7 +519,7 @@ $("saveFixed").addEventListener("click", () => {
   fixedItems().forEach(r => meta[r.s] = r);
   const a = recs().filter(r => !(r.k === "t" && r.d === d));
   let n = 0;
-  document.querySelectorAll("#fixList input").forEach(i => {
+  document.querySelectorAll("#fixList input[data-f]").forEach(i => {
     const v = numOf(i); if(!v) return;
     const src = meta[i.dataset.f]; if(!src) return;
     const rec = { k:"t", id:uid(), d, s:src.s, m:v };

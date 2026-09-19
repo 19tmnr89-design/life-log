@@ -169,11 +169,23 @@ button,a,label,.tile{touch-action:manipulation}
 .grp2 h3{display:flex;justify-content:space-between;align-items:baseline;
   font-size:10.5px;font-weight:700;color:var(--dim);letter-spacing:.08em;margin:0 2px 7px}
 .grp2 h3 em{font-style:normal;color:var(--sub);font-variant-numeric:tabular-nums;font-size:11.5px}
-.row{display:flex;align-items:center;gap:9px;padding:8px 12px;
+.row{display:flex;align-items:center;gap:9px;padding:8px 12px;flex-wrap:wrap;
   background:var(--panel);border:1px solid var(--line);border-radius:11px;margin-bottom:6px}
-.row .nm{flex:1;font-size:13px;min-width:0;line-height:1.3}
+.row .nm{flex:1;font-size:13px;min-width:0;line-height:1.3;text-align:left}
 .row .nm small{display:block;font-size:10px;color:var(--dim);margin-top:2px;
   font-variant-numeric:tabular-nums}
+/* 補足。付いている項目だけ名前が少し上がって、下に小さく出る。 */
+.row .nm small.note{color:var(--sub);font-variant-numeric:normal}
+
+/* ---- 補足の入力（項目名を押すと出る） ---- */
+.noteedit{flex-basis:100%;display:flex;align-items:center;gap:7px;margin-top:9px}
+/* 既定を16pxにしているのは、iOS が16px未満の入力欄でフォーカス時に拡大するため。
+   マウスのある端末だけ小さくする。 */
+.row .noteedit input{flex:1;width:auto;text-align:left;font-size:16px;font-weight:400;
+  background:var(--panel2);border:1px solid var(--accent);border-radius:9px;padding:9px 10px}
+@media (pointer:fine){ .row .noteedit input{font-size:13px} }
+.noteedit .ok{background:var(--accent);color:var(--accent-ink);font-weight:700;
+  font-size:13px;border-radius:9px;padding:9px 15px}
 
 /* ---- 定例項目の変更（チップ） ---- */
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 2px 4px}
