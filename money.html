@@ -113,6 +113,11 @@
     </div>
 
     <div id="assetEdit" hidden>
+      <div class="mnav">
+        <button id="aPrev" aria-label="前の月">‹</button>
+        <div class="m" id="aMonthLabel"></div>
+        <button id="aNext" aria-label="次の月">›</button>
+      </div>
       <div id="assetState"></div>
       <div class="total"><span class="l">合計</span><span class="v" id="aTotal">0<small>万円</small></span></div>
       <p class="hint" id="aHint"></p>
@@ -131,11 +136,11 @@
   </div>
   <div class="body">
     <div class="seg wide" id="logMode">
-      <button data-m="chart" aria-pressed="true">推移</button>
-      <button data-m="list" aria-pressed="false">履歴</button>
+      <button data-m="list" aria-pressed="true">履歴</button>
+      <button data-m="chart" aria-pressed="false">推移</button>
     </div>
 
-    <div id="expWrap">
+    <div id="expWrap" hidden>
       <div class="tiles-stat" id="expStats"></div>
       <div class="chartcard">
         <h2>月ごとの支出と収入</h2>
@@ -160,7 +165,7 @@
       </div>
     </div>
 
-    <div id="logBody" hidden></div>
+    <div id="logBody"></div>
   </div>
 </section>
 

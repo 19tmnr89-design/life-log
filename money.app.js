@@ -9,7 +9,13 @@
 const KEY = "money-log-v1", FAV = "money-fav-v1";
 const $ = id => document.getElementById(id);
 const yen = n => n.toLocaleString("ja-JP");
-const today = () => new Date().toISOString().slice(0, 10);
+/* 「今日」は端末のローカル日付で決める。
+   以前は toISOString()（UTC基準）を使っていたため、日本時間 0〜8時台に開くと
+   UTCではまだ前日で、「今日」の日付なのに実際は昨日になる事故があった。 */
+const today = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 /* 8桁のランダムID。1万件規模なら衝突確率は 0.01% 未満。
    短くしているのは Firestore の 1MiB 制限に効くため（1万件で約80KB差）。 */
 const uid = () => { let s = ""; for(let i = 0; i < 8; i++) s += (Math.random()*36|0).toString(36); return s; };
@@ -90,8 +96,9 @@ const SURFACE = "#1c1f2b";
 /* ---- 状態 ---- */
 let type = "e", digits = "", date = today(), lastIds = [], level1 = null;
 let fMonth = today().slice(0, 7), chartMonths = 0, assetMode = "chart";
+let aMonth = today().slice(0, 7);
 let searchQ = "";
-let logMode = "chart", expMonths = 12, expFilter = "all";
+let logMode = "list", expMonths = 12, expFilter = "all";
 /* マウスとキーボードのある端末か（PCなら数字キーで金額を打てるようにする） */
 const FINE = window.matchMedia("(pointer:fine)").matches || !("ontouchstart" in window);
 
@@ -717,26 +724,53 @@ $("range").addEventListener("click", e => {
   chartMonths = +b.dataset.m; renderChart();
 });
 
-function lastAssetSnapshot(){
+/* 指定した月より前の直近のスナップショット。
+   その月自身にすでに記録があれば、それを「自分の値」として返す（own:true）。
+   資産は月1回の入力が普通だが、月末付近に前月分を入れ忘れて翌月に入力し直す
+   （前付けで記録する）ケースがあるため、beforeYm を省略した「最新」だけでなく
+   任意の月を指定して読めるようにしている。 */
+function lastAssetSnapshot(beforeYm){
   const rows = recs().filter(r => r.k === "a");
-  if(!rows.length) return { date:null, map:{} };
+  if(!rows.length) return { date:null, map:{}, own:false };
+  if(beforeYm){
+    const own = rows.filter(r => r.d === beforeYm + "-01");
+    if(own.length){
+      const map = {}; own.forEach(r => map[r.a] = r.m);
+      return { date:beforeYm + "-01", map, own:true };
+    }
+    const before = rows.filter(r => r.d.slice(0, 7) < beforeYm);
+    if(!before.length) return { date:null, map:{}, own:false };
+    const d = before.map(r => r.d).sort().pop();
+    const map = {}; before.filter(r => r.d === d).forEach(r => map[r.a] = r.m);
+    return { date:d, map, own:false };
+  }
   const d = rows.map(r => r.d).sort().pop();
   const map = {}; rows.filter(r => r.d === d).forEach(r => map[r.a] = r.m);
-  return { date:d, map };
+  return { date:d, map, own:false };
 }
 function renderAssetEdit(){
   renderAssetHeader();
   const accs = accounts().filter(a => a.active !== 0);
-  const { date:d, map } = lastAssetSnapshot();
-  const st = assetMonthState();
-  $("assetState").innerHTML = st.done
-    ? `<div class="stateline done">✅ <span><b>${jpMonth(st.cur)}分は入力済みです。</b>保存し直すと、この月の記録を入れ替えます。</span></div>`
-    : `<div class="stateline todo">📝 <span><b>${jpMonth(st.cur)}分はまだ入力していません。</b>`
-      + (st.prev ? `前回の入力は ${jpMonth(st.prev)} です。` : "") + `</span></div>`;
-  $("saveAssets").textContent = `${jpMonth(st.cur)}分として保存`;
+  const { map, own } = lastAssetSnapshot(aMonth);
+  const cur = today().slice(0, 7), isCur = aMonth === cur;
+  $("aMonthLabel").textContent = jpMonth(aMonth);
+  /* ベースの表示（今月を見ているとき）は今までどおり詳しい文言。
+     別の月を選んだときは、入力済みかどうかだけシンプルに出す（未入力なら何も出さない）。 */
+  if(isCur){
+    const st = assetMonthState();
+    $("assetState").innerHTML = st.done
+      ? `<div class="stateline done">✅ <span><b>${jpMonth(st.cur)}分は入力済みです。</b>保存し直すと、この月の記録を入れ替えます。</span></div>`
+      : `<div class="stateline todo">📝 <span><b>${jpMonth(st.cur)}分はまだ入力していません。</b>`
+        + (st.prev ? `前回の入力は ${jpMonth(st.prev)} です。` : "") + `</span></div>`;
+  } else {
+    $("assetState").innerHTML = own
+      ? `<div class="stateline done">✅ <span><b>${jpMonth(aMonth)}分は入力済みです。</b></span></div>`
+      : "";
+  }
+  $("saveAssets").textContent = `${jpMonth(aMonth)}分として保存`;
   $("aHint").textContent = !accs.length
     ? "口座がまだ登録されていません。データタブで money_accounts.csv を取り込んでください。"
-    : d ? "前回入力した値が入っています。変わった口座だけ上書きして保存してください。単位は万円です。"
+    : Object.keys(map).length ? "前回入力した値が入っています。変わった口座だけ上書きして保存してください。単位は万円です。"
         : "口座ごとの残高を万円で入力してください。次からは前回の値が入った状態で開きます。";
   const groups = {};
   accs.forEach(a => (groups[a.grp] ||= []).push(a));
@@ -751,7 +785,7 @@ function renderAssetEdit(){
   recalcAssets();
 }
 function recalcAssets(){
-  const { map } = lastAssetSnapshot();
+  const { map } = lastAssetSnapshot(aMonth);
   let sum = 0; const subs = {};
   document.querySelectorAll("#accList input").forEach(inp => {
     const v = +inp.value || 0; sum += v;
@@ -768,8 +802,10 @@ function recalcAssets(){
   $("aTotal").innerHTML = yen(sum) + "<small>万円</small>";
 }
 $("accList").addEventListener("input", recalcAssets);
+$("aPrev").addEventListener("click", () => { aMonth = shiftMonth(aMonth, -1); renderAssetEdit(); });
+$("aNext").addEventListener("click", () => { aMonth = shiftMonth(aMonth, +1); renderAssetEdit(); });
 $("saveAssets").addEventListener("click", () => {
-  const d = today().slice(0, 8) + "01";
+  const d = aMonth + "-01";
   const a = recs().filter(r => !(r.k === "a" && r.d === d));
   document.querySelectorAll("#accList input").forEach(inp =>
     a.push({ k:"a", id:uid(), d, a:inp.dataset.a, m:(+inp.value || 0) * 10000 }));
