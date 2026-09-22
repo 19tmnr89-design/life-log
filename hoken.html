@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#11141a">
+<title>もしもシート｜保険の整理</title>
+<link rel="stylesheet" href="hoken.css">
+</head>
+<body>
+
+<div id="view-banner" class="view-banner" hidden>
+  閲覧モードで開いています。内容の変更はできません。
+</div>
+
+<header class="app-header">
+  <div class="header-inner">
+    <a href="index.html" class="home-link" title="ホームに戻る">←</a>
+    <h1>もしもシート</h1>
+    <span class="tagline">入っている保険と、もしもの時のお金</span>
+  </div>
+  <nav class="tab-bar">
+    <button class="tab-btn active" data-tab="sim">もしも</button>
+    <button class="tab-btn" data-tab="policies">契約</button>
+    <button class="tab-btn" data-tab="assumptions" data-edit-only>前提</button>
+    <button class="tab-btn" data-tab="settings" data-edit-only>設定</button>
+  </nav>
+</header>
+
+<main>
+
+  <!-- ============ もしも ============ -->
+  <section id="tab-sim" class="tab-panel active">
+
+    <div class="card">
+      <h2>どのケースを見ますか</h2>
+      <div class="btn-row" id="scenario-row">
+        <button type="button" class="btn-sub active" data-scenario="death">自分が亡くなったら</button>
+        <button type="button" class="btn-sub" disabled title="後のリリースで対応します">働けなくなったら（準備中）</button>
+        <button type="button" class="btn-sub" disabled title="後のリリースで対応します">大病をしたら（準備中）</button>
+        <button type="button" class="btn-sub" disabled title="後のリリースで対応します">介護が必要になったら（準備中）</button>
+      </div>
+    </div>
+
+    <div id="sim-empty" class="card" hidden>
+      <h2>まだ前提が入っていません</h2>
+      <p class="note">家族構成や暮らしのお金を入れると、もしもの時のグラフが出せます。</p>
+      <button type="button" id="start-wizard-2" class="btn-main">入力を始める</button>
+    </div>
+
+    <div id="sim-body">
+      <div class="card">
+        <h2>もしもの時に入るお金</h2>
+        <div class="summary-grid" id="summary-grid"></div>
+        <div id="verdict" class="verdict"></div>
+        <p class="note" style="margin-top:12px;margin-bottom:0;">
+          税金・社会保険料は考慮していない概算です。公的年金は入力された金額をそのまま使っています。
+        </p>
+      </div>
+
+      <div class="card">
+        <h2>お金がいつまでもつか</h2>
+        <p class="note">貯金と、入ってくるお金から暮らしの支出を引いた残高の推移です。</p>
+        <div class="chart-wrap" id="chart-balance"></div>
+      </div>
+
+      <div class="card">
+        <h2>年ごとの収入と支出</h2>
+        <p class="note">上向きが入ってくるお金、下向きが出ていくお金です。</p>
+        <div class="chart-wrap" id="chart-flow"></div>
+        <div class="chart-legend" id="flow-legend"></div>
+      </div>
+
+      <div class="card" data-edit-only>
+        <h2>前提を動かしてみる</h2>
+        <p class="note">スライダーを動かすと、上のグラフがその場で変わります。</p>
+        <div class="slider-row">
+          <label for="sl-inflation">インフレ率</label>
+          <input type="range" id="sl-inflation" min="0" max="5" step="0.1">
+          <span class="val" id="sl-inflation-val"></span>
+        </div>
+        <div class="slider-row">
+          <label for="sl-return">運用利回り</label>
+          <input type="range" id="sl-return" min="0" max="7" step="0.1">
+          <span class="val" id="sl-return-val"></span>
+        </div>
+        <div class="slider-row">
+          <label for="sl-spouse">配偶者の年収</label>
+          <input type="range" id="sl-spouse" min="0" max="1000" step="10">
+          <span class="val" id="sl-spouse-val"></span>
+        </div>
+        <div class="btn-row">
+          <button type="button" id="sl-reset" class="btn-sub">前提を元に戻す</button>
+          <button type="button" id="sl-save" class="btn-sub">この前提を保存する</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 契約 ============ -->
+  <section id="tab-policies" class="tab-panel">
+
+    <div class="card" data-edit-only>
+      <h2>払っている保険料</h2>
+      <p class="note">有効な契約だけを年額に換算して合計しています。</p>
+      <div id="premium-summary"></div>
+    </div>
+
+    <div class="card">
+      <h2>入っている保険</h2>
+      <p class="note">証券番号や口座番号は保存しません。「どこにあるか」だけをメモしてください。</p>
+      <div class="btn-row" data-edit-only style="margin-bottom:14px;">
+        <button type="button" id="add-policy" class="btn-main">＋ 保険を追加</button>
+      </div>
+      <div id="policy-list" class="item-list"></div>
+    </div>
+
+    <div class="card">
+      <h2>会社の制度</h2>
+      <p class="note">団体保険・死亡退職金・弔慰金・企業年金など、会社から出るお金です。</p>
+      <div class="btn-row" data-edit-only style="margin-bottom:14px;">
+        <button type="button" id="add-company" class="btn-main">＋ 会社の制度を追加</button>
+      </div>
+      <div id="company-list" class="item-list"></div>
+    </div>
+  </section>
+
+  <!-- ============ 前提 ============ -->
+  <section id="tab-assumptions" class="tab-panel">
+
+    <div class="card">
+      <h2>自分のこと</h2>
+      <div class="field-row three">
+        <div class="field">
+          <label for="p-birth">生まれた年</label>
+          <div class="input-unit"><input type="number" id="p-birth" placeholder="1988"><span class="unit">年</span></div>
+        </div>
+        <div class="field">
+          <label for="p-pension">加入している年金</label>
+          <select id="p-pension">
+            <option value="kosei">厚生年金（会社員・公務員）</option>
+            <option value="kokumin">国民年金（自営業など）</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="p-retire">定年の予定</label>
+          <div class="input-unit"><input type="number" id="p-retire" placeholder="65"><span class="unit">歳</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>配偶者のこと</h2>
+      <div class="field-row">
+        <div class="field">
+          <label for="s-birth">生まれた年</label>
+          <div class="input-unit"><input type="number" id="s-birth" placeholder="1990"><span class="unit">年</span></div>
+        </div>
+        <div class="field">
+          <label for="s-income">今の年収</label>
+          <div class="input-unit"><input type="number" id="s-income" placeholder="150"><span class="unit">万円</span></div>
+        </div>
+        <div class="field">
+          <label for="s-after">もしもの後に想定する年収</label>
+          <div class="input-unit"><input type="number" id="s-after" placeholder="300"><span class="unit">万円</span></div>
+          <p class="sublabel">働き方を変える想定なら、その金額を入れてください。</p>
+        </div>
+        <div class="field">
+          <label for="s-until">何歳まで働く想定か</label>
+          <div class="input-unit"><input type="number" id="s-until" placeholder="65"><span class="unit">歳</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>子どものこと</h2>
+      <p class="note">生まれた年と進路から、年ごとの教育費を自動で計算します。</p>
+      <div class="btn-row" style="margin-bottom:14px;">
+        <button type="button" id="add-child" class="btn-main">＋ 子どもを追加</button>
+      </div>
+      <div id="child-list" class="item-list"></div>
+    </div>
+
+    <div class="card">
+      <h2>住まいのこと</h2>
+      <div class="field-row">
+        <div class="field">
+          <label for="h-type">住まいの種類</label>
+          <select id="h-type">
+            <option value="loan">持ち家（住宅ローンあり）</option>
+            <option value="owned">持ち家（ローン完済）</option>
+            <option value="rent">賃貸</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="h-payment">毎月の返済額・家賃</label>
+          <div class="input-unit"><input type="number" id="h-payment" placeholder="12"><span class="unit">万円/月</span></div>
+        </div>
+        <div class="field">
+          <label for="h-years">残りの返済年数</label>
+          <div class="input-unit"><input type="number" id="h-years" placeholder="28"><span class="unit">年</span></div>
+        </div>
+        <div class="field">
+          <label for="h-other">管理費・固定資産税など</label>
+          <div class="input-unit"><input type="number" id="h-other" placeholder="2.5"><span class="unit">万円/月</span></div>
+          <p class="sublabel">団信でローンが消えても残る費用です。</p>
+        </div>
+      </div>
+      <div class="field">
+        <label class="check-row">
+          <input type="checkbox" id="h-gc">
+          <span>団体信用生命保険（団信）に入っている</span>
+        </label>
+        <p class="sublabel">入っている場合、自分が亡くなるとローンの返済がなくなるものとして計算します。</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>暮らしのお金</h2>
+      <div class="field-row three">
+        <div class="field">
+          <label for="l-living">今の生活費</label>
+          <div class="input-unit"><input type="number" id="l-living" placeholder="30"><span class="unit">万円/月</span></div>
+          <p class="sublabel">住居費・教育費を除いた金額です。</p>
+        </div>
+        <div class="field">
+          <label for="l-rate1">子どもがいる間の生活費</label>
+          <div class="input-unit"><input type="number" id="l-rate1" placeholder="70"><span class="unit">%</span></div>
+          <p class="sublabel">自分が欠けた後の割合。目安は70%。</p>
+        </div>
+        <div class="field">
+          <label for="l-rate2">子どもの独立後の生活費</label>
+          <div class="input-unit"><input type="number" id="l-rate2" placeholder="50"><span class="unit">%</span></div>
+          <p class="sublabel">目安は50%。</p>
+        </div>
+      </div>
+      <div class="field" style="max-width:320px;">
+        <label for="l-funeral">葬儀・お墓・相続関連の費用</label>
+        <div class="input-unit"><input type="number" id="l-funeral" placeholder="200"><span class="unit">万円</span></div>
+        <p class="sublabel">最初の年にまとめて計上します。</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>貯金・投資・入る予定のお金</h2>
+      <p class="note">もしもの時に使えるお金の元手です。</p>
+      <div class="btn-row" style="margin-bottom:14px;">
+        <button type="button" id="add-asset" class="btn-main">＋ 追加</button>
+      </div>
+      <div id="asset-list" class="item-list"></div>
+    </div>
+
+    <div class="card">
+      <h2>公的年金など</h2>
+      <p class="note">
+        自動計算はしません。ねんきんネットなどで調べた年額を入れてください。
+        金額が未入力のものは0として計算します。
+      </p>
+      <div class="btn-row" style="margin-bottom:14px;">
+        <button type="button" id="add-public" class="btn-main">＋ 追加</button>
+        <button type="button" id="reset-public" class="btn-sub">よくある3つを並べ直す</button>
+      </div>
+      <div id="public-list" class="item-list"></div>
+    </div>
+
+    <div class="card">
+      <h2>教育費の目安を補正する</h2>
+      <p class="note">
+        文部科学省「子供の学習費調査」と日本政策金融公庫の調査をもとにした概算が入っています。
+        実際の金額が分かる場合は上書きしてください。空欄にすると元の概算に戻ります。
+      </p>
+      <div id="edu-table"></div>
+    </div>
+
+    <div class="card">
+      <h2>計算の前提</h2>
+      <div class="field-row three">
+        <div class="field">
+          <label for="a-infl">インフレ率</label>
+          <div class="input-unit"><input type="number" id="a-infl" step="0.1" placeholder="1"><span class="unit">%/年</span></div>
+        </div>
+        <div class="field">
+          <label for="a-ret">運用利回り</label>
+          <div class="input-unit"><input type="number" id="a-ret" step="0.1" placeholder="1"><span class="unit">%/年</span></div>
+        </div>
+        <div class="field">
+          <label for="a-years">シミュレーション年数</label>
+          <div class="input-unit"><input type="number" id="a-years" placeholder="自動"><span class="unit">年</span></div>
+          <p class="sublabel">空欄なら配偶者が90歳になるまで。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 設定 ============ -->
+  <section id="tab-settings" class="tab-panel">
+
+    <div class="card">
+      <h2>入力のやり直し</h2>
+      <p class="note">質問に順番に答えていく形で、前提をまとめて入力できます。</p>
+      <button type="button" id="start-wizard" class="btn-main">入力ウィザードを開く</button>
+    </div>
+
+    <div class="card">
+      <h2>家族に見せる</h2>
+      <p class="note">
+        下のリンクを開くと閲覧モードになり、編集ボタンが表示されなくなります。
+        同じ同期コードを入れた端末どうしで内容が共有されます。
+      </p>
+      <p class="note mono" id="view-url"></p>
+      <div class="btn-row">
+        <button type="button" id="copy-view-url" class="btn-sub">リンクをコピー</button>
+        <button type="button" id="open-view" class="btn-sub">閲覧モードで開く</button>
+      </div>
+      <p class="note last" style="margin-top:12px;">
+        ※ 閲覧モードは画面上で編集ボタンを隠すだけの仕組みです。データそのものを保護するものではありません。
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>端末間の同期</h2>
+      <p class="note">同じ「同期コード（合言葉）」を入れた端末どうしで内容が同期されます。</p>
+      <div id="sync-status" class="sync-status">未接続</div>
+      <div class="field">
+        <input type="text" id="sync-code" placeholder="同期コード（例: hoken2026）" autocomplete="off">
+      </div>
+      <div class="btn-row">
+        <button type="button" id="sync-connect" class="btn-main">同期を開始</button>
+        <button type="button" id="sync-disconnect" class="btn-sub" hidden>同期を解除</button>
+      </div>
+      <div id="sync-config-box" hidden>
+        <p class="note" style="margin-top:14px;">初回のみ、Firebaseの設定を貼り付けてください。</p>
+        <textarea id="sync-config-input" rows="6" placeholder='{ "apiKey": "...", "projectId": "...", "appId": "..." }'></textarea>
+        <button type="button" id="sync-config-save" class="btn-sub wide" style="margin-top:8px;">設定を保存</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>バックアップ・データの取り込み</h2>
+      <p class="note">
+        すべての内容をJSONファイルに書き出し、読み込んで戻せます。
+        契約の内容をまとめて入れたいときも、このJSON読み込みを使ってください
+        （このアプリのコードには、実際の契約データを一切含めていません）。
+      </p>
+      <div class="btn-row">
+        <button type="button" id="export-json" class="btn-main">JSONを書き出す</button>
+        <label class="btn-sub" style="cursor:pointer;">
+          JSONを読み込む
+          <input type="file" id="import-file" accept=".json,application/json" hidden>
+        </label>
+      </div>
+      <p id="io-msg" class="save-msg" hidden></p>
+    </div>
+
+    <div class="card danger-zone">
+      <h2>全データ削除</h2>
+      <p class="note">この端末に保存された内容をすべて削除します。元に戻せません。</p>
+      <button type="button" id="clear-all" class="btn-danger">すべて削除</button>
+    </div>
+  </section>
+
+</main>
+
+<!-- 汎用ダイアログ -->
+<div id="dialog-overlay" class="overlay" hidden>
+  <div class="dialog">
+    <h2 id="dialog-title"></h2>
+    <div id="dialog-body"></div>
+    <div class="dialog-actions">
+      <button type="button" id="dialog-delete" class="btn-danger" hidden>削除</button>
+      <span class="spacer"></span>
+      <button type="button" id="dialog-cancel" class="btn-sub">キャンセル</button>
+      <button type="button" id="dialog-save" class="btn-main">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 入力ウィザード -->
+<div id="wizard-overlay" class="overlay" hidden>
+  <div class="dialog">
+    <div class="wiz-steps" id="wiz-steps"></div>
+    <div class="wiz-body" id="wiz-body"></div>
+    <div class="dialog-actions">
+      <button type="button" id="wiz-close" class="btn-sub">あとで</button>
+      <span class="spacer"></span>
+      <button type="button" id="wiz-prev" class="btn-sub">戻る</button>
+      <button type="button" id="wiz-next" class="btn-main">次へ</button>
+    </div>
+  </div>
+</div>
+
+<script src="hoken.data.js"></script>
+<script src="hoken.sim.js"></script>
+<script src="hoken.app.js"></script>
+<script>
+  window.SYNC_APP = "hoken";
+  window.SYNC_MODE = "replace"; // データが「レコードの配列」ではなく「1つのオブジェクト」なので置換モード
+</script>
+<script type="module" src="sync.js"></script>
+</body>
+</html>

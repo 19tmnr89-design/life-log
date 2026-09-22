@@ -7,6 +7,12 @@
 // アプリ名ごとに保存キー・Firestoreコレクション・イベント名が分かれるので、
 // 同じ仕組みを筋トレ／習慣／お金…と使い回せる。
 //
+// データが「レコードの配列」ではなく「1つのオブジェクト」のアプリ（例: もしもシート）は
+//   <script>window.SYNC_MODE = "replace";</script>
+// も指定する。既定（未指定）は筋トレ／お金と同じ「配列を和集合でマージ」。
+// "replace" を指定すると「新しい方で丸ごと置き換え、確認ダイアログを出す」動作になる。
+// 未指定のアプリの挙動は一切変えていない。
+//
 // データ本体は localStorage["<app>-log-v1"] が唯一の出所。各アプリの app.js とはイベントで連携する:
 //   - app.js は保存時に "<app>:changed" を dispatch する
 //   - このモジュールはリモート反映時に "<app>:remote" を dispatch する（app.js が再描画）
@@ -17,10 +23,12 @@ import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstat
 import { firebaseConfig as bakedConfig } from "./firebase-config.js";
 
 const APP = window.SYNC_APP || "kintore";
+const REPLACE_MODE = window.SYNC_MODE === "replace";
 const STORAGE_KEY = `${APP}-log-v1`;
 const CODE_KEY = `${APP}-sync-code`;
 const DEVICE_KEY = `${APP}-device-id`;
 const CFG_KEY = `${APP}-fb-config`;       // UIから貼り付けた設定の保存先
+const LOCAL_TS_KEY = `${APP}-local-updated-at`; // replaceモードでのみ使う
 const CHANGED_EVT = `${APP}:changed`;
 const REMOTE_EVT = `${APP}:remote`;
 
@@ -42,7 +50,18 @@ async function sha256Hex(text) {
 }
 
 function loadLocal() {
+  if (REPLACE_MODE) {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw == null ? null : JSON.parse(raw);
+    } catch { return null; }
+  }
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch { return []; }
+}
+
+// replaceモード用: この端末でローカルが最後に変更された時刻
+function localUpdatedAt() {
+  return Number(localStorage.getItem(LOCAL_TS_KEY) || 0);
 }
 
 function recordFingerprint(r) {
@@ -109,7 +128,10 @@ function schedulePush() {
 async function pushNow() {
   if (!docRef) return;
   try {
-    await setDoc(docRef, { records: loadLocal(), updatedAt: Date.now(), updatedBy: deviceId });
+    const body = REPLACE_MODE
+      ? { payload: loadLocal(), updatedAt: Date.now(), updatedBy: deviceId }
+      : { records: loadLocal(), updatedAt: Date.now(), updatedBy: deviceId };
+    await setDoc(docRef, body);
     setStatus("✅ 同期オン｜保存しました " + new Date().toLocaleTimeString("ja-JP"), "ok");
   } catch (e) {
     setStatus("⚠️ 同期エラー: " + (e.code || e.message), "err");
@@ -125,17 +147,42 @@ async function connect(code) {
     const id = await sha256Hex(APP + ":" + code);
     docRef = doc(db, APP, id);
 
-    // 初回リンク: リモートとローカルを和集合で統合してから購読開始
     const snap = await getDoc(docRef);
     const local = loadLocal();
-    if (snap.exists()) {
-      const remote = snap.data().records || [];
-      const merged = unionRecords(local, remote);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
-      window.dispatchEvent(new CustomEvent(REMOTE_EVT));
-      await setDoc(docRef, { records: merged, updatedAt: Date.now(), updatedBy: deviceId });
+
+    if (REPLACE_MODE) {
+      // 初回リンク: 配列の和集合ではなく「新しい方で丸ごと置き換え」。
+      // 中身が食い違うときだけ確認する（データを黙って消さないため）。
+      if (snap.exists() && snap.data().payload !== undefined) {
+        const remote = snap.data().payload;
+        const remoteAt = snap.data().updatedAt || 0;
+        const differs = JSON.stringify(local) !== JSON.stringify(remote);
+        if (differs && remoteAt > localUpdatedAt()) {
+          const ok = confirm(
+            "同期先に、この端末より新しい内容があります。\n" +
+            "この端末の内容を、同期先の内容で置き換えますか？\n\n" +
+            "（置き換える前に、データ画面からJSONを書き出しておくと元に戻せます）");
+          if (!ok) { setStatus("同期を中止しました", "err"); docRef = null; return; }
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(remote));
+          localStorage.setItem(LOCAL_TS_KEY, String(remoteAt));
+          window.dispatchEvent(new CustomEvent(REMOTE_EVT));
+        } else if (differs) {
+          await setDoc(docRef, { payload: local, updatedAt: Date.now(), updatedBy: deviceId });
+        }
+      } else if (local != null) {
+        await setDoc(docRef, { payload: local, updatedAt: Date.now(), updatedBy: deviceId });
+      }
     } else {
-      await setDoc(docRef, { records: local, updatedAt: Date.now(), updatedBy: deviceId });
+      // 初回リンク: リモートとローカルを和集合で統合してから購読開始
+      if (snap.exists()) {
+        const remote = snap.data().records || [];
+        const merged = unionRecords(local, remote);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+        window.dispatchEvent(new CustomEvent(REMOTE_EVT));
+        await setDoc(docRef, { records: merged, updatedAt: Date.now(), updatedBy: deviceId });
+      } else {
+        await setDoc(docRef, { records: local, updatedAt: Date.now(), updatedBy: deviceId });
+      }
     }
 
     if (unsub) unsub();
@@ -143,7 +190,13 @@ async function connect(code) {
       if (!snap2.exists()) return;
       const data = snap2.data();
       if (data.updatedBy === deviceId) return; // 自分の書き込みは無視（ループ防止）
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data.records || []));
+      if (REPLACE_MODE) {
+        if (data.payload === undefined) return;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data.payload));
+        localStorage.setItem(LOCAL_TS_KEY, String(data.updatedAt || Date.now()));
+      } else {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data.records || []));
+      }
       window.dispatchEvent(new CustomEvent(REMOTE_EVT));
       setStatus("✅ 同期オン｜他の端末から更新を受信 " + new Date().toLocaleTimeString("ja-JP"), "ok");
     }, err => setStatus("⚠️ 同期エラー: " + (err.code || err.message), "err"));
@@ -207,7 +260,11 @@ function initUI() {
   if (disc) disc.addEventListener("click", disconnect);
 
   // ローカル変更 → Push
-  window.addEventListener(CHANGED_EVT, schedulePush);
+  window.addEventListener(CHANGED_EVT, () => {
+    // replaceモードは「新しい方」の判定にこの時刻を使うので、Pushの前に必ず記録する
+    if (REPLACE_MODE) localStorage.setItem(LOCAL_TS_KEY, String(Date.now()));
+    schedulePush();
+  });
 
   // 保存済みコードがあれば自動再接続
   const saved = localStorage.getItem(CODE_KEY);
