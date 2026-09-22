@@ -177,22 +177,55 @@ function refreshExerciseList() {
     .map(e => `<button type="button" class="chip${used.includes(e) ? " used" : ""}" data-ex="${esc(e)}">${esc(e)}</button>`).join("");
   $$("#recent-exercises .chip").forEach(c => c.addEventListener("click", () => {
     $("#f-exercise").value = c.dataset.ex;
+    if (EXERCISE_TO_PART[c.dataset.ex]) $("#f-bodypart").value = EXERCISE_TO_PART[c.dataset.ex];
     prefillLastSets(c.dataset.ex);
   }));
 }
 
-// その種目の前回セットをプレースホルダとして再現
+// 同じ日・同じ種目の既存レコード（あれば追記対象）
+function findTodayRecord(exercise) {
+  const date = $("#f-date").value;
+  return records.find(r => r.date === date && r.exercise === exercise) || null;
+}
+
+// 「本日すでに記録済み → 追記します」のヒント表示
+function updateContinueHint() {
+  const ex = $("#f-exercise").value.trim();
+  const hint = $("#continue-hint");
+  if (!hint) return;
+  const rec = ex ? findTodayRecord(ex) : null;
+  if (rec) {
+    hint.textContent = `📌 本日の「${ex}」に追記します（現在 ${rec.sets.length} セット）`;
+    hint.hidden = false;
+  } else {
+    hint.hidden = true;
+  }
+}
+
+// 種目選択時のセット欄プリフィル
 function prefillLastSets(exercise) {
+  // 本日すでに同種目があれば「追記」なので、空の1行から始める
+  if (findTodayRecord(exercise)) {
+    setsContainer.innerHTML = "";
+    addSetRow();
+    updateContinueHint();
+    return;
+  }
+  // それ以外は直近の同種目セットをテンプレとして再現
   const past = records.filter(r => r.exercise === exercise).sort((a, b) => b.date.localeCompare(a.date));
-  if (!past.length) return;
-  setsContainer.innerHTML = "";
-  past[0].sets.forEach(s => addSetRow(s.weight, s.reps));
+  if (past.length) {
+    setsContainer.innerHTML = "";
+    past[0].sets.forEach(s => addSetRow(s.weight, s.reps));
+  }
+  updateContinueHint();
 }
 
 $("#f-bodypart").addEventListener("change", refreshExerciseList);
+$("#f-exercise").addEventListener("input", updateContinueHint);
 $("#f-exercise").addEventListener("change", () => {
   const ex = $("#f-exercise").value.trim();
   if (ex && EXERCISE_TO_PART[ex]) $("#f-bodypart").value = EXERCISE_TO_PART[ex];
+  updateContinueHint();
 });
 
 $("#record-form").addEventListener("submit", e => {
@@ -204,14 +237,17 @@ $("#record-form").addEventListener("submit", e => {
 
   if (!sets.length) { alert("セットを1つ以上入力してください"); return; }
 
-  records.push({
-    id: newId(),
-    date: $("#f-date").value,
-    exercise: $("#f-exercise").value.trim(),
-    bodyPart: $("#f-bodypart").value,
-    sets,
-    memo: $("#f-memo").value.trim()
-  });
+  const date = $("#f-date").value;
+  const exercise = $("#f-exercise").value.trim();
+  const memo = $("#f-memo").value.trim();
+  const existing = findTodayRecord(exercise);
+  if (existing) {
+    // 同じ日・同じ種目 → 既存レコードにセットを追記
+    existing.sets.push(...sets);
+    if (memo) existing.memo = existing.memo ? existing.memo + " / " + memo : memo;
+  } else {
+    records.push({ id: newId(), date, exercise, bodyPart: $("#f-bodypart").value, sets, memo });
+  }
   saveRecords();
 
   // フォームは日付・部位を保持し、種目・セットのみリセット
@@ -221,6 +257,7 @@ $("#record-form").addEventListener("submit", e => {
   addSetRow();
   refreshExerciseList();
   renderTodaySummary();
+  updateContinueHint();
 
   const msg = $("#save-msg");
   msg.hidden = false;
@@ -239,6 +276,55 @@ function renderTodaySummary() {
 
 /* ================= 履歴 ================= */
 
+// 同じ種目で、この日より前の直近の記録
+function findPrevRecord(rec) {
+  let best = null;
+  for (const r of records) {
+    if (r.exercise !== rec.exercise || r.date >= rec.date) continue;
+    if (!best || r.date > best.date) best = r;
+  }
+  return best;
+}
+
+function daysBetween(from, to) {
+  return Math.round((new Date(to) - new Date(from)) / 86400000);
+}
+
+// [36kg×12 ×3, 31kg×10] のように、同じ重量が続くまとまりで要約する
+function setsSummary(sets) {
+  const groups = [];
+  for (const s of sets) {
+    const last = groups[groups.length - 1];
+    if (last && last.weight === s.weight) last.reps.push(s.reps);
+    else groups.push({ weight: s.weight, reps: [s.reps] });
+  }
+  const parts = groups.map(g => {
+    const uniq = [...new Set(g.reps)];
+    if (g.reps.length > 1 && uniq.length === 1) return `${g.weight}kg×${uniq[0]} ×${g.reps.length}セット`;
+    return `${g.weight}kg×${g.reps.join(",")}`;
+  });
+  // 重量を細かく上下させた日は長くなりすぎるので、頭だけ見せて総セット数で締める
+  if (parts.length > 4) return parts.slice(0, 3).join(" / ") + ` … 計${sets.length}セット`;
+  return parts.join(" / ");
+}
+
+function prevCompareHTML(rec) {
+  const prev = findPrevRecord(rec);
+  if (!prev) return `<div class="rec-prev"><span class="prev-first">初回</span></div>`;
+
+  const prevVol = recordVolume(prev);
+  let badge = "";
+  if (prevVol > 0) {
+    const pct = Math.round((recordVolume(rec) - prevVol) / prevVol * 100);
+    const cls = pct > 0 ? "up" : pct < 0 ? "down" : "same";
+    const txt = pct > 0 ? `↑+${pct}%` : pct < 0 ? `↓${pct}%` : "±0%";
+    badge = `<span class="prev-delta ${cls}">${txt}</span>`;
+  }
+  const [, m, d] = prev.date.split("-").map(Number);
+  const gap = daysBetween(prev.date, rec.date);
+  return `<div class="rec-prev">${badge}<span class="prev-meta">前回 ${m}/${d}（${gap}日ぶり）· ${esc(setsSummary(prev.sets))}</span></div>`;
+}
+
 function recCardHTML(r) {
   const sets = r.sets.map(s => `<span class="rec-set-item"><b>${s.weight}</b>kg×${s.reps}</span>`).join("");
   return `
@@ -248,6 +334,7 @@ function recCardHTML(r) {
         <button type="button" class="rec-del" title="削除">🗑</button>
       </div>
       <div class="rec-sets">${sets}</div>
+      ${prevCompareHTML(r)}
       ${r.memo ? `<div class="rec-memo">📝 ${esc(r.memo)}</div>` : ""}
     </div>`;
 }
@@ -265,16 +352,145 @@ function bindDeleteButtons(root, refresh) {
   });
 }
 
+/* ---- カレンダー ---- */
+
+// 表示中の月と、選択中の日
+let calYear, calMonth;   // calMonth は 0-11
+let selectedDate = null;
+
+function dateKey(y, m, d) {
+  return `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+// その月の記録がある日 → その日のレコード
+function recordsByDate() {
+  const map = {};
+  for (const r of records) (map[r.date] ??= []).push(r);
+  return map;
+}
+
+function renderCalendar() {
+  const byDate = recordsByDate();
+  $("#cal-month").textContent = `${calYear}年 ${calMonth + 1}月`;
+
+  const first = new Date(calYear, calMonth, 1);
+  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+  const startDow = first.getDay(); // 0=日
+  const todayStrVal = todayStr();
+
+  // その月のサマリー
+  let monthDays = 0, monthVol = 0;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = dateKey(calYear, calMonth, d);
+    if (byDate[key]) {
+      monthDays++;
+      monthVol += byDate[key].reduce((s, r) => s + recordVolume(r), 0);
+    }
+  }
+  $("#cal-summary").textContent = monthDays
+    ? `${monthDays}日 / ${Math.round(monthVol).toLocaleString()}kg`
+    : "記録なし";
+
+  const cells = [];
+  for (let i = 0; i < startDow; i++) cells.push(`<div class="cal-cell empty"></div>`);
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = dateKey(calYear, calMonth, d);
+    const recs = byDate[key];
+    const dow = (startDow + d - 1) % 7;
+    const cls = [
+      "cal-cell",
+      recs ? "done" : "",
+      key === todayStrVal ? "today" : "",
+      key === selectedDate ? "selected" : "",
+      dow === 0 ? "sun" : dow === 6 ? "sat" : ""
+    ].filter(Boolean).join(" ");
+    // 記録がある日は丸で囲む
+    cells.push(`<button type="button" class="${cls}" data-date="${key}"${recs ? "" : " disabled"}>
+      <span class="cal-day">${d}</span>
+      ${recs ? `<span class="cal-dot"></span>` : ""}
+    </button>`);
+  }
+  $("#calendar").innerHTML = cells.join("");
+
+  $$("#calendar .cal-cell[data-date]:not([disabled])").forEach(btn => {
+    btn.addEventListener("click", () => {
+      selectedDate = selectedDate === btn.dataset.date ? null : btn.dataset.date;
+      renderCalendar();
+      renderDayDetail();
+    });
+  });
+}
+
+function renderDayDetail() {
+  const box = $("#day-detail");
+  if (!selectedDate) { box.innerHTML = ""; return; }
+  const recs = records.filter(r => r.date === selectedDate);
+  if (!recs.length) { box.innerHTML = ""; return; }
+
+  const sets = recs.reduce((s, r) => s + r.sets.length, 0);
+  const reps = recs.reduce((s, r) => s + r.sets.reduce((a, x) => a + (x.reps || 0), 0), 0);
+  const vol = recs.reduce((s, r) => s + recordVolume(r), 0);
+
+  box.innerHTML = `
+    <div class="day-detail-head">
+      <span class="dd-date">${esc(fmtDate(selectedDate))}</span>
+      <button type="button" id="dd-close" class="dd-close" title="閉じる">✕</button>
+    </div>
+    <div class="dd-stats">
+      <span><b>${recs.length}</b>種目</span>
+      <span><b>${sets}</b>セット</span>
+      <span><b>${reps}</b>レップ</span>
+      <span><b>${Math.round(vol).toLocaleString()}</b>kg</span>
+    </div>
+    ${recs.map(recCardHTML).join("")}`;
+
+  $("#dd-close").addEventListener("click", () => {
+    selectedDate = null;
+    renderCalendar();
+    renderDayDetail();
+  });
+  bindDeleteButtons(box, () => { renderCalendar(); renderDayDetail(); });
+}
+
+function shiftMonth(delta) {
+  const d = new Date(calYear, calMonth + delta, 1);
+  calYear = d.getFullYear();
+  calMonth = d.getMonth();
+  renderCalendar();
+}
+
+$("#cal-prev").addEventListener("click", () => shiftMonth(-1));
+$("#cal-next").addEventListener("click", () => shiftMonth(1));
+$("#cal-today").addEventListener("click", () => {
+  const now = new Date();
+  calYear = now.getFullYear();
+  calMonth = now.getMonth();
+  renderCalendar();
+});
+
 function renderHistory() {
+  if (calYear === undefined) {
+    // 初回は「記録がある最新の月」を開く
+    const latest = records.map(r => r.date).sort().pop();
+    const base = latest ? new Date(latest.slice(0, 4), +latest.slice(5, 7) - 1, 1) : new Date();
+    calYear = base.getFullYear();
+    calMonth = base.getMonth();
+  }
+  renderCalendar();
+  renderDayDetail();
+  renderSearchResults();
+}
+
+/* ---- 検索（従来のリスト表示） ---- */
+
+function renderSearchResults() {
   const q = $("#history-filter").value.trim();
   const list = $("#history-list");
-  let filtered = records;
-  if (q) {
-    filtered = records.filter(r =>
-      r.exercise.includes(q) || (r.bodyPart || "").includes(q) || (r.memo || "").includes(q));
-  }
+  if (!q) { list.innerHTML = ""; return; }
+  const filtered = records.filter(r =>
+    r.exercise.includes(q) || (r.bodyPart || "").includes(q) || (r.memo || "").includes(q));
   if (!filtered.length) {
-    list.innerHTML = `<p class="empty-note">${q ? "該当する記録がありません" : "まだ記録がありません"}</p>`;
+    list.innerHTML = `<p class="empty-note">該当する記録がありません</p>`;
     return;
   }
   const byDate = {};
@@ -289,10 +505,10 @@ function renderHistory() {
         ${byDate[d].map(recCardHTML).join("")}
       </div>`;
   }).join("");
-  bindDeleteButtons(list, renderHistory);
+  bindDeleteButtons(list, renderSearchResults);
 }
 
-$("#history-filter").addEventListener("input", renderHistory);
+$("#history-filter").addEventListener("input", renderSearchResults);
 
 /* ================= 分析 ================= */
 
@@ -677,7 +893,7 @@ $("#clear-all").addEventListener("click", () => {
 
 initBodyPartSelect();
 $("#f-date").value = todayStr();
-$("#f-date").addEventListener("change", renderTodaySummary);
+$("#f-date").addEventListener("change", () => { renderTodaySummary(); updateContinueHint(); });
 addSetRow();
 refreshExerciseList();
 renderTodaySummary();

@@ -33,6 +33,7 @@
         <input type="text" id="f-exercise" list="exercise-list" placeholder="例: ベンチプレス" required autocomplete="off">
         <datalist id="exercise-list"></datalist>
         <div id="recent-exercises" class="chip-row"></div>
+        <div id="continue-hint" class="continue-hint" hidden></div>
       </div>
 
       <div class="field">
@@ -58,10 +59,27 @@
 
   <!-- 履歴タブ -->
   <section id="tab-history" class="tab-panel">
-    <div class="history-controls">
-      <input type="text" id="history-filter" placeholder="種目・部位・メモで絞り込み">
+    <div class="cal-nav">
+      <button type="button" id="cal-prev" class="cal-arrow" title="前の月">‹</button>
+      <div class="cal-title">
+        <span id="cal-month"></span>
+        <span id="cal-summary" class="cal-summary"></span>
+      </div>
+      <button type="button" id="cal-next" class="cal-arrow" title="次の月">›</button>
     </div>
-    <div id="history-list"></div>
+    <div class="cal-weekdays">
+      <span class="sun">日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span class="sat">土</span>
+    </div>
+    <div id="calendar" class="cal-grid"></div>
+    <button type="button" id="cal-today" class="btn-sub wide">今月に戻る</button>
+
+    <div id="day-detail"></div>
+
+    <details class="search-box">
+      <summary>🔍 種目・メモで検索</summary>
+      <input type="text" id="history-filter" placeholder="種目・部位・メモで絞り込み">
+      <div id="history-list"></div>
+    </details>
   </section>
 
   <!-- 分析タブ -->
