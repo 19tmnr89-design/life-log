@@ -659,10 +659,12 @@ function covRowsHtml(covs) {
   return covs.map((c, i) => {
     const u = covUnit(c.kind);
     const isMonthly = c.kind === "death_monthly" || c.kind === "disability_monthly" || c.kind === "nursing_monthly";
+    const kindLabel = label(D.COVERAGE_KINDS, c.kind);
     return '<div class="cov-row">' +
       '<div>' + (i === 0 ? '<label style="font-size:11px;color:#8e97a8;">保障の種類</label>' : "") +
       sel("cov-kind-" + i, D.COVERAGE_KINDS, c.kind) +
-      (c.title ? '<p class="sublabel">' + esc(c.title) + "</p>" : "") + "</div>" +
+      '<input type="text" id="cov-title-' + i + '" value="' + esc(c.title || "") +
+      '" placeholder="名称（空欄なら「' + esc(kindLabel) + '」）" class="cov-title-input"></div>' +
       '<div>' + (i === 0 ? '<label style="font-size:11px;color:#8e97a8;">金額</label>' : "") +
       unitInp("cov-amt-" + i, c.amount ? c.amount / u.scale : "", u.unit, "") + "</div>" +
       '<div>' + (i === 0 ? '<label style="font-size:11px;color:#8e97a8;">支払期間</label>' : "") +
@@ -687,6 +689,7 @@ function collectCovs(existing) {
       kind: kind,
       amount: amt,
       termYears: $("cov-term-" + i) ? (val("cov-term-" + i) === "" ? null : n(val("cov-term-" + i))) : null,
+      title: $("cov-title-" + i) ? val("cov-title-" + i) : (existing[i].title || ""),
     }));
   }
   return out;
