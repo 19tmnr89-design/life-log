@@ -134,6 +134,7 @@ const FURUSATO_SITES = [
   { key: "yahoo",     label: "Yahoo!ショッピング" },
   { key: "furunavi",  label: "ふるなび" },
   { key: "au",        label: "au PAY ふるさと納税" },
+  { key: "municipality_direct", label: "自治体から直接" },
   { key: "other",     label: "その他" },
 ];
 
