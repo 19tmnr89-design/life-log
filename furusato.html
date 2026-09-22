@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#11141a">
+<title>ふるさと納税シート</title>
+<link rel="stylesheet" href="furusato.css">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="header-inner">
+    <a href="index.html" class="home-link" title="ホームに戻る">←</a>
+    <h1>🎁 ふるさと納税シート</h1>
+    <span class="tagline">寄付の記録と、あといくら寄付できるか</span>
+  </div>
+  <div class="year-row">
+    <button type="button" id="year-prev" class="year-arrow" title="前の年">‹</button>
+    <span id="year-label" class="year-label"></span>
+    <button type="button" id="year-next" class="year-arrow" title="次の年">›</button>
+  </div>
+  <nav class="tab-bar">
+    <button class="tab-btn active" data-tab="limit">上限額</button>
+    <button class="tab-btn" data-tab="donations">寄付記録</button>
+    <button class="tab-btn" data-tab="income">収入・保険料</button>
+    <button class="tab-btn" data-tab="settings">設定</button>
+  </nav>
+</header>
+
+<main>
+
+  <!-- ============ 上限額 ============ -->
+  <section id="tab-limit" class="tab-panel active">
+
+    <div class="card">
+      <h2>あといくら寄付できるか</h2>
+      <div class="summary-grid" id="summary-grid"></div>
+      <p class="note" style="margin-top:12px;margin-bottom:0;">
+        所得税・住民税の実際の計算式による目安です。生命保険料控除・iDeCo・住宅ローン控除などは
+        考慮していません。年の途中の収入・社会保険料は見込みで計算されるため、年末に近づくほど
+        正確になります。確定した金額は源泉徴収票が出てから確認してください。
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>世帯情報</h2>
+      <p class="note">配偶者控除・扶養控除・所得金額調整控除の判定に使います。この年の状況を入れてください。</p>
+      <div class="field">
+        <label class="check-row"><input type="checkbox" id="h-spouse"><span>配偶者がいる</span></label>
+      </div>
+      <div class="field" id="h-spouse-income-field">
+        <label for="h-spouse-income">配偶者の年収（給与）</label>
+        <div class="input-unit"><input type="number" id="h-spouse-income" placeholder="0"><span class="unit">万円</span></div>
+        <p class="sublabel">103万円以下なら配偶者控除が満額になります。配偶者特別控除の帯（〜201.6万円）まで自動判定します。</p>
+      </div>
+      <div class="field">
+        <label class="check-row"><input type="checkbox" id="h-under23"><span>23歳未満の扶養親族がいる（16歳未満の子を含む）</span></label>
+        <p class="sublabel">年収850万円超のとき、所得金額調整控除の対象になります。</p>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="h-dep-general">一般の扶養親族（16〜18歳・23〜69歳）</label>
+          <input type="number" id="h-dep-general" placeholder="0" min="0">
+        </div>
+        <div class="field">
+          <label for="h-dep-specific">特定扶養親族（19〜22歳）</label>
+          <input type="number" id="h-dep-specific" placeholder="0" min="0">
+        </div>
+        <div class="field">
+          <label for="h-dep-elderly-with">70歳以上・同居の親</label>
+          <input type="number" id="h-dep-elderly-with" placeholder="0" min="0">
+        </div>
+        <div class="field">
+          <label for="h-dep-elderly-other">70歳以上・その他</label>
+          <input type="number" id="h-dep-elderly-other" placeholder="0" min="0">
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="detail-card">
+      <h2>計算の内訳</h2>
+      <div id="calc-detail"></div>
+    </div>
+  </section>
+
+  <!-- ============ 寄付記録 ============ -->
+  <section id="tab-donations" class="tab-panel">
+    <div class="card">
+      <h2>この年の寄付</h2>
+      <div class="summary-grid" id="donation-summary"></div>
+    </div>
+    <div class="card">
+      <h2>寄付の一覧</h2>
+      <div class="btn-row" style="margin-bottom:14px;">
+        <button type="button" id="add-donation" class="btn-main">＋ 寄付を記録する</button>
+      </div>
+      <div id="donation-list" class="item-list"></div>
+    </div>
+  </section>
+
+  <!-- ============ 収入・保険料 ============ -->
+  <section id="tab-income" class="tab-panel">
+    <div class="card">
+      <h2>月ごとの収入・社会保険料</h2>
+      <p class="note">
+        給与は月々の手取り前の額面、ボーナスは支給月にまとめて入れてください。
+        社会保険料は給与明細の「健康保険料・厚生年金保険料・雇用保険料」の合計（天引きされた額）です。
+      </p>
+      <div id="income-table"></div>
+      <div class="summary-grid" id="income-summary" style="margin-top:16px;"></div>
+    </div>
+  </section>
+
+  <!-- ============ 設定 ============ -->
+  <section id="tab-settings" class="tab-panel">
+    <div class="card">
+      <h2>端末間の同期</h2>
+      <p class="note">同じ「同期コード（合言葉）」を入れた端末どうしで内容が同期されます。</p>
+      <div id="sync-status" class="sync-status">未接続</div>
+      <div class="field">
+        <input type="text" id="sync-code" placeholder="同期コード（例: furusato2026）" autocomplete="off">
+      </div>
+      <div class="btn-row">
+        <button type="button" id="sync-connect" class="btn-main">同期を開始</button>
+        <button type="button" id="sync-disconnect" class="btn-sub" hidden>同期を解除</button>
+      </div>
+      <div id="sync-config-box" hidden>
+        <p class="note" style="margin-top:14px;">初回のみ、Firebaseの設定を貼り付けてください。</p>
+        <textarea id="sync-config-input" rows="6" placeholder='{ "apiKey": "...", "projectId": "...", "appId": "..." }'></textarea>
+        <button type="button" id="sync-config-save" class="btn-sub wide" style="margin-top:8px;">設定を保存</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>バックアップ</h2>
+      <p class="note">すべての内容をJSONファイルに書き出し、読み込んで戻せます。</p>
+      <div class="btn-row">
+        <button type="button" id="export-json" class="btn-main">JSONを書き出す</button>
+        <label class="btn-sub" style="cursor:pointer;">
+          JSONを読み込む
+          <input type="file" id="import-file" accept=".json,application/json" hidden>
+        </label>
+      </div>
+      <p id="io-msg" class="save-msg" hidden></p>
+    </div>
+
+    <div class="card danger-zone">
+      <h2>全データ削除</h2>
+      <p class="note">この端末に保存された内容をすべて削除します。元に戻せません。</p>
+      <button type="button" id="clear-all" class="btn-danger">すべて削除</button>
+    </div>
+  </section>
+
+</main>
+
+<!-- 汎用ダイアログ -->
+<div id="dialog-overlay" class="overlay" hidden>
+  <div class="dialog">
+    <h2 id="dialog-title"></h2>
+    <div id="dialog-body"></div>
+    <div class="dialog-actions">
+      <button type="button" id="dialog-delete" class="btn-danger" hidden>削除</button>
+      <span class="spacer"></span>
+      <button type="button" id="dialog-cancel" class="btn-sub">キャンセル</button>
+      <button type="button" id="dialog-save" class="btn-main">保存</button>
+    </div>
+  </div>
+</div>
+
+<script src="furusato.data.js"></script>
+<script src="furusato.sim.js"></script>
+<script src="furusato.app.js"></script>
+<script>
+  window.SYNC_APP = "furusato";
+  window.SYNC_FINGERPRINT = r => r.id || JSON.stringify(r);
+</script>
+<script type="module" src="sync.js"></script>
+</body>
+</html>
