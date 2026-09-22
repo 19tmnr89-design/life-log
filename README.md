@@ -22,6 +22,11 @@ hoken.html                     ☂️ もしもシート（保険の整理・も
 hoken.app.js                   画面・入力・グラフ
 hoken.data.js / hoken.sim.js   マスターデータ・シミュレーション計算（純粋関数）
 hoken.css
+
+furusato.html                        🎁 ふるさと納税シート（寄付の記録・上限額の計算）
+furusato.app.js                      画面・入力
+furusato.data.js / furusato.sim.js   税制の速算表・上限額の計算（純粋関数）
+furusato.css
 ```
 
 詳しい設計の経緯・データ形式・落とし穴は [`CLAUDE.md`](./CLAUDE.md) を参照。
@@ -61,3 +66,4 @@ GitHub の Settings → Pages で公開すると、次のURLでアクセスで�
 - `https://<ユーザー名>.github.io/life-log/kintore.html`（筋トレ）
 - `https://<ユーザー名>.github.io/life-log/money.html`（お金）
 - `https://<ユーザー名>.github.io/life-log/hoken.html`（もしも）
+- `https://<ユーザー名>.github.io/life-log/furusato.html`（ふるさと納税）
