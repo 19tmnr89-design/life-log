@@ -53,9 +53,11 @@ function donationsOf(year) { return RECORDS.filter(r => r.k === "donation" && r.
 function incomeOf(year) { return RECORDS.filter(r => r.k === "income" && r.year === year); }
 function householdOf(year) { return RECORDS.find(r => r.k === "household" && r.year === year); }
 
+/* 呼び出し側で「新しく作ったか」を見分けられるよう、
+   ensureHousehold と同じく戻り値に created を持たせている（下の理由を参照）。 */
 function ensureHousehold(year) {
   let h = householdOf(year);
-  if (h) return h;
+  if (h) return { record: h, created: false };
   // 直近の年の設定があれば引き継ぐ（毎年ゼロから入れ直さなくていいように）
   const prior = RECORDS.filter(r => r.k === "household" && r.year < year).sort((a, b) => b.year - a.year)[0];
   h = prior
@@ -63,16 +65,25 @@ function ensureHousehold(year) {
     : { k: "household", id: "household-" + year, year, hasSpouse: false, spouseAnnualIncome: 0,
         hasUnder23Dependent: false, dependents: { general: 0, specific: 0, elderlyWith: 0, elderlyOther: 0 } };
   RECORDS.push(h);
-  return h;
+  return { record: h, created: true };
 }
 
+/* 新しく行を作ったときだけ true を返す。
+   呼び出し側（init / onYearChange）はこれが false なら persist() を呼ばない。
+   何もローカルで変わっていないのに毎回 "furusato:changed" を発火すると、
+   sync.js が同期コード接続直後の和集合マージを終える前にこの端末の（まだ他端末の分を
+   取り込んでいない）ローカルデータで上書き push してしまう競合が起きるため
+   （実際にPCとスマホの内容が食い違う形で発生した。詳細は第10章）。 */
 function ensureIncomeRows(year) {
+  let created = false;
   for (let m = 1; m <= 12; m++) {
     const id = "income-" + year + "-" + m;
     if (!RECORDS.some(r => r.id === id)) {
       RECORDS.push({ k: "income", id, year, month: m, salary: 0, bonus: 0, insurance: 0 });
+      created = true;
     }
   }
+  return created;
 }
 
 /* ================= 年の切り替え ================= */
@@ -83,16 +94,18 @@ function setupYearNav() {
 }
 function onYearChange() {
   $("year-label").textContent = YEAR + "年";
-  ensureIncomeRows(YEAR);
-  ensureHousehold(YEAR);
-  persist();
+  const createdIncome = ensureIncomeRows(YEAR);
+  const { created: createdHousehold } = ensureHousehold(YEAR);
+  /* 何も新しく作っていなければ persist() しない（変わっていないデータで
+     "furusato:changed" を発火すると、同期の初回マージと競合するため。理由は下の関数を参照）。 */
+  if (createdIncome || createdHousehold) persist();
   renderAll();
 }
 
 /* ================= 上限額タブ ================= */
 
 function renderLimit() {
-  const h = ensureHousehold(YEAR);
+  const { record: h } = ensureHousehold(YEAR);
   $("h-spouse").checked = !!h.hasSpouse;
   $("h-spouse-income").value = h.spouseAnnualIncome ? h.spouseAnnualIncome / 10000 : "";
   $("h-spouse-income-field").hidden = !h.hasSpouse;
@@ -168,7 +181,7 @@ function bindHouseholdInputs() {
   $("h-spouse").addEventListener("change", () => { $("h-spouse-income-field").hidden = !$("h-spouse").checked; });
 }
 function pullHousehold() {
-  const h = ensureHousehold(YEAR);
+  const { record: h } = ensureHousehold(YEAR);
   h.hasSpouse = $("h-spouse").checked;
   h.spouseAnnualIncome = Math.round(n($("h-spouse-income").value) * 10000);
   h.hasUnder23Dependent = $("h-under23").checked;
@@ -419,8 +432,8 @@ function renderAll() {
 
 function init() {
   RECORDS = load();
-  ensureIncomeRows(YEAR);
-  ensureHousehold(YEAR);
+  const createdIncome = ensureIncomeRows(YEAR);
+  const { created: createdHousehold } = ensureHousehold(YEAR);
 
   setupTabs();
   setupYearNav();
@@ -448,7 +461,12 @@ function init() {
     renderAll();
   });
 
-  persist();
+  /* 新しく行を作った（初回起動や年またぎ）ときだけ保存する。
+     何も変わっていないのに毎回の起動で "furusato:changed" を発火すると、
+     sync.js が同期コード接続直後にリモートと和集合マージを終える前に、
+     この端末だけのデータで push してしまい、他端末の記録が消えて見えることがあった。
+     詳しくは CLAUDE.md 第10章「起動のたびに同期が上書きされる」を参照。 */
+  if (createdIncome || createdHousehold) persist();
   renderAll();
 }
 
