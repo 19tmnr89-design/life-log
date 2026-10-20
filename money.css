@@ -48,7 +48,11 @@ button,a,label,.tile{touch-action:manipulation}
 .top .msum{margin-left:auto;border-collapse:collapse;font-size:10.5px;line-height:1.45;white-space:nowrap}
 .top .msum th{color:var(--sub);font-weight:400;text-align:left;padding:0 10px 0 0}
 .top .msum td{color:var(--text);font-weight:700;text-align:right;padding:0;font-variant-numeric:tabular-nums}
+.top .msum th.h{text-align:right;padding:0}
+.top .msum td + td, .top .msum th.h + th.h{padding-left:8px}
 .top .msum td.inc{color:var(--income)}
+/* 入力画面は3列でタイトルも長いので、iPhone SE 幅では少し詰める */
+@media (max-width:380px){ #entryHeader{font-size:10px} }
 
 /* ---- 入力ヘッダ ---- */
 /* 金額はカテゴリを選ぶ間ずっと見えていてほしいので、ここだけ上に貼り付ける。 */

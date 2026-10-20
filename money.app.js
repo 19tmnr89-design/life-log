@@ -817,19 +817,33 @@ $("saveAssets").addEventListener("click", () => {
 /* =========================================================================
    履歴
    ========================================================================= */
-/* 支出タブ右上の今月の集計。「今月」はローカル日付の年月。
-   支出は入力画面の「今月の支出」（#mtotal）と同じく税金・投資も含めた全額で、
-   投資除きはそこから投資（rKind === I）の分だけ引く。税金は引かない。 */
-function renderLogHeader(){
-  const ym = today().slice(0, 7);
+/* 月の範囲 [from, to]（"YYYY-MM"、両端を含む）の収入・支出・投資を合計する。
+   支出は税金・投資も含めた全額、inv はそのうち投資（rKind === I）の分。 */
+function sumMonths(from, to){
   let inc = 0, exp = 0, inv = 0;
   for(const r of recs()){
-    if(r.k !== "t" || !r.d.startsWith(ym)) continue;
+    if(r.k !== "t") continue;
+    const ym = r.d.slice(0, 7);
+    if(ym < from || ym > to) continue;
     if(rType(r) === "i") inc += r.m;
     else { exp += r.m; if(rKind(r) === I) inv += r.m; }
   }
+  return { inc, exp, inv };
+}
+/* 支出タブ右上の今月の集計。「今月」はローカル日付の年月。
+   支出は税金・投資も含めた全額で、投資除きはそこから投資の分だけ引く。税金は引かない。 */
+function renderLogHeader(){
+  const ym = today().slice(0, 7), { inc, exp, inv } = sumMonths(ym, ym);
   $("logHeader").innerHTML = [["今月の収入", inc, "inc"], ["今月の支出", exp, ""], ["今月の支出（投資除き）", exp - inv, ""]]
     .map(([k, v, c]) => `<tr><th>${k}</th><td class="${c}">${yen(v)}円</td></tr>`).join("");
+}
+/* 入力画面右上の集計。今月と過去12ヶ月（今月を含む直近12か月）の収入・支出（投資除き）。 */
+function renderEntryHeader(){
+  const ym = today().slice(0, 7), m = sumMonths(ym, ym), y = sumMonths(shiftMonth(ym, -11), ym);
+  /* 375px幅に収めるため、こちらはセルに「円」を付けず見出しに単位を出す */
+  $("entryHeader").innerHTML = `<tr><th>（円）</th><th class="h">今月</th><th class="h">過去12ヶ月</th></tr>`
+    + `<tr><th>収入</th><td class="inc">${yen(m.inc)}</td><td class="inc">${yen(y.inc)}</td></tr>`
+    + `<tr><th>支出（投資除き）</th><td>${yen(m.exp - m.inv)}</td><td>${yen(y.exp - y.inv)}</td></tr>`;
 }
 function renderLog(){
   /* 同じ日付の中は取り込み順のまま（JSのsortは安定なので入れ替わらない） */
@@ -1229,12 +1243,8 @@ function renderBreakdown(){
     + (tx.length ? "" : `<p class="note err" style="margin:9px 2px 0">記録がまだ1件もありません。PCで4本のCSVを取り込み、同じ同期コードで両方の端末を繋いでください。</p>`);
 }
 function renderMonth(){
-  const ym = today().slice(0, 7);
-  const v = recs().filter(r => r.k === "t" && rType(r) === "e" && r.d.startsWith(ym))
-                  .reduce((s, r) => s + r.m, 0);
-  $("mtotal").textContent = yen(v);
   const ds = dataSize();
-  renderLogHeader();
+  renderEntryHeader(); renderLogHeader();
   $("dataCount").textContent = `${yen(recs().length)}件`;
   renderBreakdown();
   const el = $("sizeNote");
