@@ -388,6 +388,14 @@ Claude Code 側で git が使えるなら `git push` が一番早い。
 
 ### ハマりどころ
 
+- **`money.html` の HTML と `money.app.js` / `money.css` の中身は、必ず組で更新する。**
+  GitHub Pages は各ファイルを約10分キャッシュするので、HTML だけ新しく JS が古いままの組み合わせが起きる。
+  2026年10月、入力画面右上の `#mtotal` を `#entryHeader` に置き換えた直後に実際に起きた。
+  新しい HTML には `#mtotal` が無いので、古い JS の `renderMonth()` が null に書き込もうとして止まり、
+  右上が空になった。対策として `money.html` は `money.app.js?v=YYYYMMDD` / `money.css?v=YYYYMMDD`
+  で読み込んでいる。**`money.app.js` か `money.css` を変えたら、`money.html` の `?v=` も必ず上げる**
+  （同じ日に2回目なら `20261020b` のように）。こうすると、新しい HTML は必ず新しい JS/CSS を取りに行く。
+
 - `input.files = dt.files` の直後に `change` を発火して即 `input.files.length` を読むと 0 になる。
   代入と発火は分けて、代入直後に長さを確認する。
 - ブラウザ拡張の接続がよく切れる。切れるとタブIDが変わり、`window` に置いた変数が消える。
