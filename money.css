@@ -44,6 +44,11 @@ button,a,label,.tile{touch-action:manipulation}
 .top h1{font-size:15px;font-weight:700}
 .top .meta{margin-left:auto;font-size:11.5px;color:var(--sub);font-variant-numeric:tabular-nums;text-align:right}
 .top .meta b{color:var(--text);font-size:13px;font-weight:700;margin-left:5px}
+.top h1{flex-shrink:0;white-space:nowrap}
+.top .msum{margin-left:auto;border-collapse:collapse;font-size:10.5px;line-height:1.45;white-space:nowrap}
+.top .msum th{color:var(--sub);font-weight:400;text-align:left;padding:0 10px 0 0}
+.top .msum td{color:var(--text);font-weight:700;text-align:right;padding:0;font-variant-numeric:tabular-nums}
+.top .msum td.inc{color:var(--income)}
 
 /* ---- 入力ヘッダ ---- */
 /* 金額はカテゴリを選ぶ間ずっと見えていてほしいので、ここだけ上に貼り付ける。 */

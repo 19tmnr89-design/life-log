@@ -817,10 +817,24 @@ $("saveAssets").addEventListener("click", () => {
 /* =========================================================================
    履歴
    ========================================================================= */
+/* 支出タブ右上の今月の集計。「今月」はローカル日付の年月。
+   支出は入力画面の「今月の支出」（#mtotal）と同じく税金・投資も含めた全額で、
+   投資除きはそこから投資（rKind === I）の分だけ引く。税金は引かない。 */
+function renderLogHeader(){
+  const ym = today().slice(0, 7);
+  let inc = 0, exp = 0, inv = 0;
+  for(const r of recs()){
+    if(r.k !== "t" || !r.d.startsWith(ym)) continue;
+    if(rType(r) === "i") inc += r.m;
+    else { exp += r.m; if(rKind(r) === I) inv += r.m; }
+  }
+  $("logHeader").innerHTML = [["今月の収入", inc, "inc"], ["今月の支出", exp, ""], ["今月の支出（投資除き）", exp - inv, ""]]
+    .map(([k, v, c]) => `<tr><th>${k}</th><td class="${c}">${yen(v)}円</td></tr>`).join("");
+}
 function renderLog(){
   /* 同じ日付の中は取り込み順のまま（JSのsortは安定なので入れ替わらない） */
   const rs = recs().filter(r => r.k === "t").reverse().sort((a, b) => b.d.localeCompare(a.d));
-  $("logCount").textContent = rs.length ? `${yen(rs.length)}件` : "";
+  renderLogHeader();
   if(!rs.length){
     $("logBody").innerHTML = `<p class="empty">まだ記録がありません。<br>入力タブで金額を打ち、内容を選ぶと保存されます。</p>`;
     return;
@@ -1220,7 +1234,7 @@ function renderMonth(){
                   .reduce((s, r) => s + r.m, 0);
   $("mtotal").textContent = yen(v);
   const ds = dataSize();
-  $("logCount").textContent = `${yen(recs().filter(r => r.k === "t").length)}件`;
+  renderLogHeader();
   $("dataCount").textContent = `${yen(recs().length)}件`;
   renderBreakdown();
   const el = $("sizeNote");

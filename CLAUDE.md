@@ -93,6 +93,20 @@ furusato.css          ふるさと納税シートのスタイル
 `logMode` の初期値と、HTML側のボタン順・`aria-pressed`・`hidden` の初期状態を揃えて変える必要がある
 （`#logMode` のボタン順、`#expWrap` と `#logBody` のどちらに `hidden` を付けるか）。
 
+### 支出タブ右上の今月の集計（`#logHeader`）
+
+以前は記録件数（`#logCount`）を出していたが、件数は見ても使い道がないので、
+今月の収入・支出・支出（投資除き）の3行の小さな表に変えた（2026年10月）。
+
+- 「今月」は `today().slice(0,7)`（ローカル日付）で決める。UTC基準にしないこと（上の「当日」の話と同じ）。
+- 支出は税金・投資も含めた全額。入力画面の「今月の支出」（`#mtotal`）と同じ定義なので、両者の数字は必ず一致する。
+- 投資除きは、支出から `rKind(r) === I`（投資）の分だけ引く。**税金は引かない。**
+- 描画は `renderLogHeader()`。`renderLog()` と `renderMonth()` の両方から呼ぶ
+  （記録の追加・修正・削除・同期のどれでも更新されるように）。
+- ラベルと金額の2列で金額は右揃え。収入の金額だけ緑（`var(--income)`）。
+- iPhone SE（幅375px）で「支出」のタイトルと重ならないよう、表は `white-space:nowrap` で
+  `margin-left:auto`、`h1` は `flex-shrink:0`。375px でタイトル右端と表の左端の間に約90pxの余裕がある。
+
 ### 資産タブの月選択
 
 資産は月1回の入力が普通だが、月末ぎりぎりの残高を翌月になってから前付けで入れる
@@ -329,7 +343,7 @@ pg.wait_for_timeout(6000)   # 取り込みは数秒かかる
 ```
 
 - `pageerror` と `console` の error を必ず拾う。
-- 画面ごとに代表的な数値（`#fNet`, `#mtotal`, `#logCount`, `#dataCount`）を読んで回帰を見る。
+- 画面ごとに代表的な数値（`#fNet`, `#mtotal`, `#logHeader`, `#dataCount`）を読んで回帰を見る。
 - スマホ幅は `viewport={"width":420,"height":900}`。
 - グラフは `#expChart rect` / `#chart path` の要素数で描画の有無を見る。
 
