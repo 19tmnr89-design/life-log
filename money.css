@@ -254,6 +254,17 @@ button,a,label,.tile{touch-action:manipulation}
 .tip .r i{width:8px;height:8px;border-radius:2px;display:inline-block}
 .tip .r b{font-weight:600;font-variant-numeric:tabular-nums}
 
+/* ---- 分析 ---- */
+.atbl{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums;margin-bottom:4px}
+.atbl th{font-size:10.5px;color:var(--dim);font-weight:400;text-align:right;padding:0 0 5px 6px;white-space:nowrap}
+.atbl td{text-align:right;padding:6px 0 6px 6px;border-top:1px solid var(--line);white-space:nowrap;vertical-align:top}
+.atbl th:first-child,.atbl td:first-child{text-align:left;padding-left:0;white-space:normal;word-break:break-all}
+.atbl td small{display:block;font-size:10px;color:var(--dim)}
+.atbl td:first-child small{display:inline;margin-left:4px}
+.atbl .abar{display:block;height:4px;background:var(--panel2);border-radius:999px;overflow:hidden;margin:3px 0 0 auto;width:60px}
+.atbl .abar span{display:block;height:100%;border-radius:999px}
+.asub{font-size:11.5px;font-weight:700;color:var(--sub);margin:12px 2px 6px}
+
 /* ---- 履歴 ---- */
 .day{font-size:11px;color:var(--dim);font-weight:700;margin:16px 2px 7px;letter-spacing:.04em}
 .rec{display:flex;align-items:center;gap:11px;padding:11px 12px;

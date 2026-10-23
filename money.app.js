@@ -949,8 +949,9 @@ $("logMode").addEventListener("click", e => {
   logMode = b.dataset.m;
   [...e.currentTarget.children].forEach(x => x.setAttribute("aria-pressed", x === b));
   $("expWrap").hidden = logMode !== "chart";
+  $("anaWrap").hidden = logMode !== "ana";
   $("logBody").hidden = logMode !== "list";
-  logMode === "chart" ? renderExp() : renderLog();
+  renderLogMode();
 });
 $("expRange").addEventListener("click", e => {
   const b = e.target.closest("button"); if(!b) return;
@@ -1042,6 +1043,185 @@ function renderExp(){
 
   drawExpChart(S);
 }
+
+/* 支出タブの [履歴] [推移] [分析] のうち、選んでいるものを描く */
+const renderLogMode = () => logMode === "chart" ? renderExp() : logMode === "ana" ? renderAna() : renderLog();
+
+/* =========================================================================
+   分析（支出タブの [分析]）
+   「生活費」= 支出から税金・社会保険（T）と投資（I）を除いたもの。AI相談用のまとめと同じ定義。
+   比べる期間は、途中の今月を入れると平均が下がるので、原則として完了した月だけを使う。
+   ========================================================================= */
+let anaItem = null;
+const monthList = (from, to) => { const a = []; for(let m = from; m <= to; m = shiftMonth(m, 1)) a.push(m); return a; };
+const signYen = v => (v > 0 ? "+" : v < 0 ? "−" : "±") + yen(Math.abs(Math.round(v)));
+const slash = m => m.replace("-", "/");
+/* 月ごとに 収入 / 税金 / 投資 / 固定費 / 生活費 / 大項目別 / 内容別の件数・金額 を集める */
+function anaMonths(){
+  const byM = {};
+  for(const r of recs()){
+    if(r.k !== "t") continue;
+    const o = byM[r.d.slice(0, 7)] ||= { inc:0, exp:0, tax:0, inv:0, fix:0, life:0, cat:{}, all:{}, sub:{} };
+    if(rType(r) === "i"){ o.inc += r.m; continue; }
+    const k = rKind(r), c = rCat(r) || "未分類";
+    o.exp += r.m;
+    o.all[c] = (o.all[c] || 0) + r.m;
+    if(k === T){ o.tax += r.m; continue; }
+    if(k === I){ o.inv += r.m; continue; }
+    o.life += r.m;
+    if(k === F) o.fix += r.m;
+    o.cat[c] = (o.cat[c] || 0) + r.m;
+    const e = o.sub[r.s] ||= { n:0, m:0, k };
+    e.n++; e.m += r.m;
+  }
+  return byM;
+}
+/* 期間の月平均。記録の無い月（使い始める前）は数えない */
+function avgOver(byM, months, f){
+  const has = months.filter(m => byM[m]);
+  return has.length ? has.reduce((s, m) => s + f(byM[m]), 0) / has.length : null;
+}
+function sumCats(byM, months, key){
+  const t = {};
+  months.forEach(m => byM[m] && Object.entries(byM[m][key]).forEach(([c, v]) => t[c] = (t[c] || 0) + v));
+  return t;
+}
+const anaCard = (title, cap, body) =>
+  `<div class="chartcard"><h2>${title}</h2>${cap ? `<p class="cap">${cap}</p>` : ""}${body}</div>`;
+const anaTable = (head, rows) => `<table class="atbl"><thead><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead>`
+  + `<tbody>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+/* 支出が増えた＝赤、減った＝緑 */
+const diffCls = v => v > 0 ? "down" : v < 0 ? "up" : "flat";
+
+function renderAna(){
+  const byM = anaMonths(), ym = today().slice(0, 7);
+  if(!Object.keys(byM).length){ $("anaWrap").innerHTML = `<p class="empty">記録がまだありません。</p>`; return; }
+  const prev12 = monthList(shiftMonth(ym, -12), shiftMonth(ym, -1));
+  let html = "";
+
+  /* 1. 今月のペース
+     家賃のような固定費は月1回なので、日割りで延ばすとおかしくなる。固定費は
+     「今月の実績」と「過去12か月の月平均」の大きい方（まだ払っていなければ平均）をそのまま足し、
+     それ以外（変動費）だけを経過日数で月末まで延ばす。 */
+  {
+    const cur = byM[ym] || { life:0, fix:0 };
+    const d = +today().slice(8), D = new Date(+ym.slice(0, 4), +ym.slice(5), 0).getDate();
+    const avgFix = avgOver(byM, prev12, o => o.fix) || 0, avgLife = avgOver(byM, prev12, o => o.life);
+    const proj = Math.max(cur.fix, avgFix) + (cur.life - cur.fix) / d * D;
+    const diff = avgLife == null ? null : proj - avgLife;
+    html += `<div class="tiles-stat">
+      <div class="stat"><div class="lab">今月の生活費（${d}日まで）</div><div class="val">${yen(cur.life)}<span class="u">円</span></div>
+        <div class="note">うち固定費 ${yen(cur.fix)} 円</div></div>
+      <div class="stat"><div class="lab">月末の見込み</div><div class="val">${yen(Math.round(proj))}<span class="u">円</span></div>
+        <div class="note">${diff == null ? "&nbsp;" : `平均より <b class="${diffCls(diff)}">${signYen(diff)}</b> 円`}</div></div>
+      <div class="stat"><div class="lab">過去12か月の月平均</div><div class="val">${avgLife == null ? "−" : yen(Math.round(avgLife))}<span class="u">円</span></div>
+        <div class="note">${slash(prev12[0])} 〜 ${slash(prev12[11])}</div></div>
+    </div>`;
+  }
+
+  /* 2. いつもより多い・少ない大項目（直近3か月の月平均 vs その前の12か月の月平均。生活費のみ） */
+  {
+    const rec3 = monthList(shiftMonth(ym, -3), shiftMonth(ym, -1));
+    const base = monthList(shiftMonth(ym, -15), shiftMonth(ym, -4));
+    const nR = rec3.filter(m => byM[m]).length, nB = base.filter(m => byM[m]).length;
+    let body;
+    if(!nR || !nB) body = `<p class="hint">比べるには4か月以上の記録が必要です。</p>`;
+    else {
+      const R3 = sumCats(byM, rec3, "cat"), B = sumCats(byM, base, "cat");
+      const rows = [...new Set([...Object.keys(R3), ...Object.keys(B)])].map(c => {
+        const a = (R3[c] || 0) / nR, b = (B[c] || 0) / nB;
+        return { c, a, b, d:a - b };
+      }).filter(x => Math.abs(x.d) >= 1);
+      const row = x => [esc(x.c), yen(Math.round(x.b)), yen(Math.round(x.a)),
+        `<b class="${diffCls(x.d)}">${signYen(x.d)}</b>` + (x.b ? `<small>${x.d > 0 ? "+" : ""}${Math.round(x.d / x.b * 100)}%</small>` : "")];
+      const up = rows.filter(x => x.d > 0).sort((p, q) => q.d - p.d).slice(0, 3);
+      const dn = rows.filter(x => x.d < 0).sort((p, q) => p.d - q.d).slice(0, 3);
+      const head = ["大項目", "いつも", "直近3か月", "差"];
+      body = `<h3 class="asub">多くなっている</h3>` + (up.length ? anaTable(head, up.map(row)) : `<p class="hint">ありません</p>`)
+           + `<h3 class="asub">少なくなっている</h3>` + (dn.length ? anaTable(head, dn.map(row)) : `<p class="hint">ありません</p>`);
+    }
+    html += anaCard("いつもより多い・少ない大項目",
+      `生活費の月平均。直近3か月（${slash(rec3[0])}〜${slash(rec3[2])}）と、その前の12か月を比べています。`, body);
+  }
+
+  /* 3. 前年との比較（直近12か月 vs その前の12か月。どちらも完了した月だけ） */
+  {
+    const before = monthList(shiftMonth(ym, -24), shiftMonth(ym, -13));
+    const nA = prev12.filter(m => byM[m]).length, nB = before.filter(m => byM[m]).length;
+    let body;
+    if(!nA || !nB) body = `<p class="hint">比べるには13か月以上の記録が必要です。</p>`;
+    else {
+      const A = sumCats(byM, prev12, "all"), B = sumCats(byM, before, "all");
+      const tot = (ms, f) => ms.reduce((s, m) => s + (byM[m] ? f(byM[m]) : 0), 0);
+      const rows = [...new Set([...Object.keys(A), ...Object.keys(B)])]
+        .map(c => ({ c, a:A[c] || 0, b:B[c] || 0 })).sort((p, q) => (q.a - q.b) - (p.a - p.b));
+      /* 収入は増えた＝緑なので色を逆にする */
+      const line = (nm, b, a, inc) => [nm, yen(b), yen(a), `<b class="${diffCls(inc ? b - a : a - b)}">${signYen(a - b)}</b>`];
+      body = anaTable(["", "前の12か月", "直近12か月", "差"], [
+          line("<b>収入</b>", tot(before, o => o.inc), tot(prev12, o => o.inc), true),
+          line("<b>生活費</b>", tot(before, o => o.life), tot(prev12, o => o.life)),
+          line("<b>支出（全額）</b>", tot(before, o => o.exp), tot(prev12, o => o.exp)),
+        ]) + `<h3 class="asub">大項目別（増えた順）</h3>`
+        + anaTable(["大項目", "前の12か月", "直近12か月", "差"], rows.map(x => line(esc(x.c), x.b, x.a)))
+        + (nA < 12 || nB < 12 ? `<p class="hint">記録のある月が12か月に満たない期間があります（前 ${nB}か月 / 直近 ${nA}か月）。</p>` : "");
+    }
+    html += anaCard("前年との比較",
+      `直近12か月（${slash(prev12[0])}〜${slash(prev12[11])}）と、その前の12か月の合計。大項目は税金・投資も含めたすべて。`, body);
+  }
+
+  /* 4. 貯蓄率・投資率（年別）
+     貯蓄率＝（収入 − 税金・社会保険 − 生活費）÷ 収入。投資に回した分も「残した」側に数える。
+     投資率＝投資 ÷ 収入。 */
+  {
+    const Y = {};
+    Object.entries(byM).forEach(([m, o]) => {
+      const y = Y[m.slice(0, 4)] ||= { inc:0, tax:0, inv:0, life:0 };
+      y.inc += o.inc; y.tax += o.tax; y.inv += o.inv; y.life += o.life;
+    });
+    const bar = (v, col) => `<span class="abar"><span style="width:${Math.max(0, Math.min(100, v)).toFixed(1)}%;background:${col}"></span></span>`;
+    const rows = Object.keys(Y).sort().reverse().map(y => {
+      const o = Y[y];
+      if(!o.inc) return [y, "0", "−", "−"];
+      const sr = (o.inc - o.tax - o.life) / o.inc * 100, ir = o.inv / o.inc * 100;
+      return [y + (y === ym.slice(0, 4) ? "<small>途中</small>" : ""), yen(o.inc),
+        `<b class="${sr < 0 ? "down" : ""}">${Math.round(sr)}%</b>` + bar(sr, "var(--income)"),
+        `<b>${Math.round(ir)}%</b>` + bar(ir, "var(--invest)")];
+    });
+    html += anaCard("貯蓄率・投資率",
+      "貯蓄率＝（収入 − 税金・社会保険 − 生活費）÷ 収入（投資に回した分も含む）。投資率＝投資 ÷ 収入。",
+      anaTable(["年", "収入", "貯蓄率", "投資率"], rows));
+  }
+
+  /* 9. よく使う内容の回数と1回あたりの金額
+     直近12か月で回数の多い生活費の内容。固定費は月1回なので除く。 */
+  {
+    const last12 = monthList(shiftMonth(ym, -11), ym), cnt = {};
+    last12.forEach(m => byM[m] && Object.entries(byM[m].sub).forEach(([s, e]) => {
+      if(e.k !== F) cnt[s] = (cnt[s] || 0) + e.n;
+    }));
+    const top = Object.entries(cnt).sort((a, b) => b[1] - a[1]).slice(0, 6).map(x => x[0]);
+    let body;
+    if(!top.length) body = `<p class="hint">直近12か月の記録がありません。</p>`;
+    else {
+      if(!top.includes(anaItem)) anaItem = top[0];
+      const at = m => (byM[m] && byM[m].sub[anaItem]) || { n:0, m:0 };
+      const tn = last12.reduce((s, m) => s + at(m).n, 0), tm = last12.reduce((s, m) => s + at(m).m, 0);
+      const rows = last12.slice().reverse().map(m => { const e = at(m);
+        return [slash(m) + (m === ym ? "<small>途中</small>" : ""), e.n + "回", yen(e.m), e.n ? yen(Math.round(e.m / e.n)) : "−"]; });
+      body = `<div class="rangebtns" id="anaItems">${top.map(s =>
+          `<button data-s="${esc(s)}" aria-pressed="${s === anaItem}">${esc(s)}</button>`).join("")}</div>`
+        + `<p class="cap">12か月で ${tn}回・${yen(tm)}円（1回あたり ${tn ? yen(Math.round(tm / tn)) : "−"}円）</p>`
+        + anaTable(["月", "回数", "合計", "1回あたり"], rows);
+    }
+    html += anaCard("回数と1回あたりの金額", "直近12か月で記録の多い内容（固定費を除く）。", body);
+  }
+
+  $("anaWrap").innerHTML = html;
+}
+$("anaWrap").addEventListener("click", e => {
+  const b = e.target.closest("#anaItems button"); if(!b) return;
+  anaItem = b.dataset.s; renderAna();
+});
 
 let expHot = null;
 function drawExpChart(S){
@@ -1364,13 +1544,13 @@ $("tabs").addEventListener("click", e => {
   document.querySelectorAll(".screen").forEach(s => s.classList.toggle("on", s.id === b.dataset.s));
   if(b.dataset.s === "s-fixed") renderFixed();
   if(b.dataset.s === "s-assets") assetMode === "chart" ? renderChart() : renderAssetEdit();
-  if(b.dataset.s === "s-log") logMode === "chart" ? renderExp() : renderLog();
+  if(b.dataset.s === "s-log") renderLogMode();
 });
 function renderAll(){
   renderDate(); renderCats(); renderMonth();
   if($("s-fixed").classList.contains("on")) renderFixed();
   if($("s-assets").classList.contains("on")) assetMode === "chart" ? renderChart() : renderAssetEdit();
-  if($("s-log").classList.contains("on")) logMode === "chart" ? renderExp() : renderLog();
+  if($("s-log").classList.contains("on")) renderLogMode();
 }
 /* 他の端末から同期で降ってきたら、キャッシュを捨てて描き直す */
 window.addEventListener("money:remote", () => { _map = null; renderAll(); });
