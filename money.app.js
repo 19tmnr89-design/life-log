@@ -280,29 +280,15 @@ const itemTilesHTML = (items, showCat) => `<div class="tiles">` + items.map(x =>
   + (showCat ? `<small>${esc(x.c)}</small>` : "") + `</button>`).join("") + `</div>`;
 const searchHTML = () => `<div class="searchbox"><span class="ic">🔍</span>
   <input id="catSearch" placeholder="内容で探す（例: ケーキ）" autocomplete="off" value="${esc(searchQ)}">
-  ${searchQ ? `<button class="clr" id="catClear" aria-label="消す">✕</button>` : ""}</div>`;
+  <button class="clr" id="catClear" aria-label="消す"${searchQ ? "" : " hidden"}>✕</button></div>`;
 
 function renderCats(){
   const box = $("cats"), tree = catTree();
   if(type === "i"){
     box.innerHTML = tilesHTML(incomeItems().map(x => x.s), "inc") + freeHTML() + needHTML();
   } else if(!level1){
-    const all = allItems(), q = searchQ.trim();
-    if(q){
-      const hits = all.filter(x => x.s.includes(q) || x.c.includes(q)).slice(0, 30);
-      box.innerHTML = searchHTML()
-        + (hits.length ? itemTilesHTML(hits, true)
-                       : `<p class="needamt">「${esc(q)}」は見つかりませんでした。下の欄に入れると新しい内容として記録できます。</p>`)
-        + `<h2 class="sec">大項目から選ぶ</h2>` + tilesHTML(Object.keys(tree), "lv1", true)
-        + freeHTML() + needHTML();
-    } else {
-      /* 定例タブでまとめて入れる項目は、日々の入力では邪魔なので除く */
-      const fixed = new Set(fixedItems().map(r => r.s));
-      box.innerHTML = searchHTML()
-        + `<h2 class="sec">よく使う</h2>` + itemTilesHTML(all.filter(x => !fixed.has(x.s)).slice(0, 12), true)
-        + `<h2 class="sec">大項目から選ぶ</h2>` + tilesHTML(Object.keys(tree), "lv1", true)
-        + needHTML();
-    }
+    box.innerHTML = searchHTML() + `<div id="catBody"></div>`;
+    renderCatBody();
   } else {
     box.innerHTML = `<div class="crumb"><button id="back">‹ 大項目</button>
       <span class="now">${esc(level1)}</span><span class="step">2 / 2</span></div>`
@@ -312,8 +298,32 @@ function renderCats(){
   }
   renderAmt();
 }
+/* 検索欄の下（候補・大項目・自由入力）だけを描く。
+   検索欄そのものは作り直さない。打つたびに input 要素を差し替えると、日本語入力の
+   変換中の文字（「け」→「けー」→「けーき」）がその都度確定してしまい、
+   「けけーけーき」のように入力できなくなっていた（2026年10月に修正）。 */
+function renderCatBody(){
+  const tree = catTree(), all = allItems(), q = searchQ.trim();
+  if(q){
+    const hits = all.filter(x => x.s.includes(q) || x.c.includes(q)).slice(0, 30);
+    $("catBody").innerHTML = (hits.length ? itemTilesHTML(hits, true)
+                     : `<p class="needamt">「${esc(q)}」は見つかりませんでした。下の欄に入れると新しい内容として記録できます。</p>`)
+      + `<h2 class="sec">大項目から選ぶ</h2>` + tilesHTML(Object.keys(tree), "lv1", true)
+      + freeHTML() + needHTML();
+  } else {
+    /* 定例タブでまとめて入れる項目は、日々の入力では邪魔なので除く */
+    const fixed = new Set(fixedItems().map(r => r.s));
+    $("catBody").innerHTML = `<h2 class="sec">よく使う</h2>` + itemTilesHTML(all.filter(x => !fixed.has(x.s)).slice(0, 12), true)
+      + `<h2 class="sec">大項目から選ぶ</h2>` + tilesHTML(Object.keys(tree), "lv1", true)
+      + needHTML();
+  }
+  $("catClear").hidden = !searchQ;
+  renderAmt();
+}
 $("cats").addEventListener("click", e => {
-  if(e.target.id === "catClear"){ searchQ = ""; renderCats(); return; }
+  if(e.target.id === "catClear"){
+    searchQ = ""; $("catSearch").value = ""; renderCatBody(); $("catSearch").focus(); return;
+  }
   const b = e.target.closest(".tile");
   if(b && !b.disabled){
     if(b.dataset.lv1 === "1"){ level1 = b.dataset.n; renderCats(); return; }
@@ -325,14 +335,11 @@ $("cats").addEventListener("click", e => {
   }
   if(e.target.id === "freeSave") saveFree();
 });
-/* 検索欄。打つたびに絞り込むが、再描画してもフォーカスとカーソル位置は保つ。 */
+/* 検索欄。打つたびに下の候補だけを絞り込む（検索欄は差し替えない） */
 $("cats").addEventListener("input", e => {
   if(e.target.id !== "catSearch") return;
-  const pos = e.target.selectionStart;
   searchQ = e.target.value;
-  renderCats();
-  const el = $("catSearch");
-  if(el){ el.focus(); try { el.setSelectionRange(pos, pos); } catch {} }
+  renderCatBody();
 });
 $("cats").addEventListener("keydown", e => { if(e.key === "Enter" && e.target.id === "freeName") saveFree(); });
 
