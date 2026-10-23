@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#12141c">
 <title>お金ログ</title>
-<link rel="stylesheet" href="money.css?v=20261020">
+<link rel="stylesheet" href="money.css?v=20261023">
 </head>
 <body>
 
@@ -202,6 +202,13 @@ money_targets_2027.csv  account_id,target_yen</p>
     </div>
 
     <div class="card">
+      <h2>🤖 AIに相談</h2>
+      <p class="note">年別・月別の収支、大項目別の支出、よく使う内容、資産の推移をまとめた文章をコピーします。Claude などのAIアプリに貼り付けて、続けて相談したいことを書いてください。<strong>口座名は含めず、資産は区分ごとの合計だけを出します。</strong>内容（お店・費目の名前）は含まれます。</p>
+      <button type="button" class="secondary" id="aiCopy" style="margin-top:0">相談用のまとめをコピー</button>
+      <textarea id="aiText" rows="8" readonly hidden></textarea>
+    </div>
+
+    <div class="card">
       <h2>🔄 端末間の同期</h2>
       <p class="note">同じ「同期コード（合言葉）」を入れた端末どうしで記録が自動で同期されます。<strong>家計・資産のデータなので、筋トレより長めのコード（20文字程度のランダムな文字列）にしてください。</strong></p>
       <div id="sync-status" class="sync-status">未接続</div>
@@ -256,7 +263,7 @@ money_targets_2027.csv  account_id,target_yen</p>
   </div>
 </div>
 
-<script src="money.app.js?v=20261020"></script>
+<script src="money.app.js?v=20261023"></script>
 <script>window.SYNC_APP = "money";</script>
 <script type="module" src="sync.js"></script>
 </body>

@@ -1201,6 +1201,96 @@ $("exportJson").addEventListener("click", () => {
   a.download = `money-log-${today()}.json`;
   a.click(); URL.revokeObjectURL(a.href);
 });
+/* ---- AI相談用のまとめ ----------------------------------------------------
+   AIアプリに貼り付けて家計の相談をするための要約を、Markdown の表で組み立てる。
+   全件をそのまま貼ると長すぎるので集計だけにする。口座名は出さず、資産は区分（grp）の合計だけ。
+   API は呼ばない（キーを公開リポジトリに置けないため）。クリップボードにコピーするだけ。 */
+const mdTable = (head, rows) => [head, head.map(() => "---"), ...rows]
+  .map(r => "| " + r.join(" | ") + " |").join("\n");
+function aiSummary(){
+  const tx = recs().filter(r => r.k === "t").sort((a, b) => a.d.localeCompare(b.d));
+  if(!tx.length) return "";
+  const ym = today().slice(0, 7), from12 = shiftMonth(ym, -11), from24 = shiftMonth(ym, -23);
+  /* 月ごと・年ごとに 収入 / 支出（全額）/ 税金・社会保険 / 投資 を集める */
+  const blank = () => ({ inc:0, exp:0, tax:0, inv:0 });
+  const byM = {}, byY = {}, catY = {}, subs = {}, incs = {};
+  for(const r of tx){
+    const m = r.d.slice(0, 7), y = r.d.slice(0, 4);
+    const M = byM[m] ||= blank(), Y = byY[y] ||= blank();
+    if(rType(r) === "i"){
+      M.inc += r.m; Y.inc += r.m;
+      if(m >= from12) incs[r.s] = (incs[r.s] || 0) + r.m;
+      continue;
+    }
+    const k = rKind(r), c = rCat(r) || "未分類";
+    M.exp += r.m; Y.exp += r.m;
+    if(k === T){ M.tax += r.m; Y.tax += r.m; }
+    if(k === I){ M.inv += r.m; Y.inv += r.m; }
+    (catY[c] ||= {})[y] = (catY[c][y] || 0) + r.m;
+    if(m >= from12){
+      const e = subs[r.s] ||= { c, m:0, n:0 };
+      e.m += r.m; e.n++;
+    }
+  }
+  const life = o => o.exp - o.tax - o.inv;
+  const years = Object.keys(byY).sort();
+  const out = [];
+  out.push("以下は私の家計簿アプリ（お金ログ）の記録を集計したものです。このデータをもとに家計の相談に乗ってください。");
+  out.push("");
+  out.push(`- 作成日: ${today()}　記録期間: ${tx[0].d.slice(0, 7)} 〜 ${tx[tx.length - 1].d.slice(0, 7)}（取引 ${yen(tx.length)}件）`);
+  out.push(`- 金額はすべて円。${ym} は月の途中までの記録です。`);
+  out.push("- 「支出」は税金・社会保険と投資（積立など）も含めた全額。「生活費」は支出から税金・社会保険と投資を除いたもの。");
+  out.push("- 「収支」は 収入 − 支出（投資は支出に含むので、投資に回した分は収支を減らす）。");
+
+  out.push("", "## 年別の収支");
+  out.push(mdTable(["年", "収入", "支出", "うち税金・社会保険", "うち投資", "生活費", "収支"],
+    years.map(y => { const o = byY[y];
+      return [y, yen(o.inc), yen(o.exp), yen(o.tax), yen(o.inv), yen(life(o)), yen(o.inc - o.exp)]; })));
+
+  out.push("", "## 直近24か月の月別収支");
+  const months = [];
+  for(let m = from24; m <= ym; m = shiftMonth(m, 1)) months.push(m);
+  out.push(mdTable(["月", "収入", "生活費", "税金・社会保険", "投資", "収支"],
+    months.map(m => { const o = byM[m] || blank();
+      return [m, yen(o.inc), yen(life(o)), yen(o.tax), yen(o.inv), yen(o.inc - o.exp)]; })));
+
+  out.push("", "## 大項目別の支出（年別）");
+  const cats = Object.keys(catY).sort((a, b) =>
+    years.reduce((s, y) => s + (catY[b][y] || 0), 0) - years.reduce((s, y) => s + (catY[a][y] || 0), 0));
+  out.push(mdTable(["大項目", ...years], cats.map(c => [c, ...years.map(y => yen(catY[c][y] || 0))])));
+
+  out.push("", `## 直近12か月（${from12} 〜 ${ym}）の支出 内容別 上位30`);
+  out.push(mdTable(["内容", "大項目", "合計", "件数"],
+    Object.entries(subs).sort((a, b) => b[1].m - a[1].m).slice(0, 30)
+      .map(([s, e]) => [s, e.c, yen(e.m), e.n])));
+
+  const incList = Object.entries(incs).sort((a, b) => b[1] - a[1]);
+  if(incList.length){
+    out.push("", `## 直近12か月の収入の内訳`);
+    out.push(mdTable(["内容", "合計"], incList.map(([s, v]) => [s, yen(v)])));
+  }
+
+  /* 資産は各年の最後の記録時点と最新時点。口座単位ではなく区分の合計 */
+  const S = assetSeries();
+  if(S.dates.length){
+    const pick = [...new Set(S.dates.map(d => S.dates.filter(x => x.slice(0, 4) === d.slice(0, 4)).pop()))];
+    out.push("", "## 資産の推移（区分別。各年の最後の記録時点と最新）");
+    out.push(mdTable(["時点", ...S.order, "合計"], pick.map(d =>
+      [d.slice(0, 7), ...S.order.map(g => yen(S.byDate[d][g] || 0)), yen(S.total[S.dates.indexOf(d)])])));
+  }
+  out.push("", "---", "相談したいこと：");
+  return out.join("\n");
+}
+$("aiCopy").addEventListener("click", () => {
+  const text = aiSummary(), ta = $("aiText");
+  if(!text){ toast("記録がまだありません", false); return; }
+  ta.value = text; ta.hidden = false;
+  /* コピーできない環境（古いブラウザ・権限なし）では、出した欄を選択して手でコピーしてもらう */
+  const manual = () => { ta.focus(); ta.select(); toast("コピーできなかったので、下の欄を長押しでコピーしてください", false); };
+  if(navigator.clipboard?.writeText)
+    navigator.clipboard.writeText(text).then(() => toast(`コピーしました（${yen(text.length)}文字）。AIアプリに貼り付けてください`, false), manual);
+  else manual();
+});
 $("genCode").addEventListener("click", () => {
   const c = [...crypto.getRandomValues(new Uint8Array(15))]
     .map(b => "abcdefghijkmnpqrstuvwxyz23456789"[b % 32]).join("");
