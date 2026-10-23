@@ -647,7 +647,7 @@ function chartBox(){
                 : { W:860, H:400, P:{ t:14, r:62, b:28, l:54 } };
 }
 function drawChart(S){
-  const svg = $("chart");
+  const svg = $("chart"); $("tip").style.opacity = 0;
   const { W, H, P } = chartBox();
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   const from = chartMonths ? Math.max(0, S.dates.length - chartMonths) : 0;
@@ -697,12 +697,22 @@ function drawChart(S){
   g += `<g id="hov"></g><rect x="${P.l}" y="${P.t}" width="${W-P.l-P.r}" height="${H-P.t-P.b}" fill="transparent" id="hit"/>`;
   svg.innerHTML = g;
   hot = { dates, total, series, order:S.order, t, X, Y, n, W, H, P };
-  const hit = svg.querySelector("#hit");
-  hit.addEventListener("pointermove", onHover);
-  hit.addEventListener("pointerleave", () => {
-    $("tip").style.opacity = 0; svg.querySelector("#hov").innerHTML = "";
-  });
+  bindTip(svg.querySelector("#hit"), onHover, hideTip);
 }
+/* グラフのツールチップ。マウスはグラフから離れたら消す。
+   タッチは指を離しても残し、グラフの外を触ったときに消す。以前は pointerleave で消していたため、
+   スマホでは長押しして指を離した瞬間（またはスクロール判定で pointercancel になった瞬間）に消えて読めなかった。 */
+function bindTip(hit, onMove, hide){
+  hit.addEventListener("pointerdown", onMove);
+  hit.addEventListener("pointermove", onMove);
+  hit.addEventListener("pointerleave", e => { if(e.pointerType === "mouse") hide(); });
+}
+const hideTip = () => { $("tip").style.opacity = 0; const h = $("chart").querySelector("#hov"); if(h) h.innerHTML = ""; };
+const hideExpTip = () => { $("expTip").style.opacity = 0; const h = $("expChart").querySelector("#expHov"); if(h) h.innerHTML = ""; };
+document.addEventListener("pointerdown", e => {
+  if(!e.target.closest("#chart")) hideTip();
+  if(!e.target.closest("#expChart")) hideExpTip();
+});
 function onHover(e){
   const { dates, total, series, order, t, X, Y, n, W, H, P } = hot;
   const svg = $("chart"), tip = $("tip"), card = svg.parentElement;
@@ -1036,8 +1046,9 @@ function renderExp(){
     + `<span><i style="background:var(--text)"></i>収入</span>`;
 
   const sum = Object.values(S.folded).reduce((a, b) => a + b, 0);
-  $("expCatCap").textContent = `${S.months[0].replace("-","/")} 〜 ${S.months[S.months.length-1].replace("-","/")} の合計 ${yen(sum)}円`
-    + `（月平均 ${yen(Math.round(sum / S.months.length))}円）`;
+  $("expCatCap").textContent = `${S.months[0].replace("-","/")} 〜 ${S.months[S.months.length-1].replace("-","/")}（${S.months.length}か月）の支出を大項目ごとに合計し、1か月あたりにならしたもの。`
+    + `上のグラフで選んだ期間と「すべて／消費のみ」に連動します（今月は途中の分も含みます）。`
+    + `期間の合計 ${yen(sum)}円、月平均 ${yen(Math.round(sum / S.months.length))}円。`;
   const max = Math.max(...Object.values(S.folded), 1);
   $("expCats").innerHTML = S.order.map((c, s) => {
     const v = S.folded[c]; if(!v) return "";
@@ -1046,7 +1057,8 @@ function renderExp(){
       <span class="bar"><span style="width:${(v / max * 100).toFixed(1)}%;background:${HEX[s % 8]}"></span></span>
       <span class="val">${yen(Math.round(v / S.months.length))}</span>
       <span class="pct">${(v / sum * 100).toFixed(1)}%</span></div>`;
-  }).join("") + `<p class="hint" style="margin:10px 2px 0">金額は月平均です。</p>`;
+  }).join("") + `<p class="hint" style="margin:10px 2px 0">金額＝その大項目の1か月あたりの平均。％＝期間の支出全体に占める割合。`
+    + `棒の長さは一番多い大項目を基準にした比較です。上位7つ以外は「その他」にまとめています。</p>`;
 
   drawExpChart(S);
 }
@@ -1063,6 +1075,8 @@ let anaItem = null;
 const monthList = (from, to) => { const a = []; for(let m = from; m <= to; m = shiftMonth(m, 1)) a.push(m); return a; };
 const signYen = v => (v > 0 ? "+" : v < 0 ? "−" : "±") + yen(Math.abs(Math.round(v)));
 const slash = m => m.replace("-", "/");
+/* 表の見出しに期間を小さく添える（例: 「前の12か月 / 2024/10〜2025/09」） */
+const periodTh = (label, ms) => `${label}<small>${slash(ms[0])}〜${slash(ms[ms.length - 1])}</small>`;
 /* 月ごとに 収入 / 税金 / 投資 / 固定費 / 生活費 / 大項目別 / 内容別の件数・金額 を集める */
 function anaMonths(){
   const byM = {};
@@ -1143,12 +1157,12 @@ function renderAna(){
         `<b class="${diffCls(x.d)}">${signYen(x.d)}</b>` + (x.b ? `<small>${x.d > 0 ? "+" : ""}${Math.round(x.d / x.b * 100)}%</small>` : "")];
       const up = rows.filter(x => x.d > 0).sort((p, q) => q.d - p.d).slice(0, 3);
       const dn = rows.filter(x => x.d < 0).sort((p, q) => p.d - q.d).slice(0, 3);
-      const head = ["大項目", "いつも", "直近3か月", "差"];
+      const head = ["大項目", periodTh("いつも", base), periodTh("直近3か月", rec3), "差"];
       body = `<h3 class="asub">多くなっている</h3>` + (up.length ? anaTable(head, up.map(row)) : `<p class="hint">ありません</p>`)
            + `<h3 class="asub">少なくなっている</h3>` + (dn.length ? anaTable(head, dn.map(row)) : `<p class="hint">ありません</p>`);
     }
     html += anaCard("いつもより多い・少ない大項目",
-      `生活費の月平均。直近3か月（${slash(rec3[0])}〜${slash(rec3[2])}）と、その前の12か月を比べています。`, body);
+      `生活費の月平均。直近3か月と、その前の12か月（＝いつも）を比べています。今月は途中なので入れていません。`, body);
   }
 
   /* 3. 前年との比較（直近12か月 vs その前の12か月。どちらも完了した月だけ） */
@@ -1164,16 +1178,17 @@ function renderAna(){
         .map(c => ({ c, a:A[c] || 0, b:B[c] || 0 })).sort((p, q) => (q.a - q.b) - (p.a - p.b));
       /* 収入は増えた＝緑なので色を逆にする */
       const line = (nm, b, a, inc) => [nm, yen(b), yen(a), `<b class="${diffCls(inc ? b - a : a - b)}">${signYen(a - b)}</b>`];
-      body = anaTable(["", "前の12か月", "直近12か月", "差"], [
+      const hA = periodTh("直近12か月", prev12), hB = periodTh("前の12か月", before);
+      body = anaTable(["", hB, hA, "差"], [
           line("<b>収入</b>", tot(before, o => o.inc), tot(prev12, o => o.inc), true),
           line("<b>生活費</b>", tot(before, o => o.life), tot(prev12, o => o.life)),
           line("<b>支出（全額）</b>", tot(before, o => o.exp), tot(prev12, o => o.exp)),
         ]) + `<h3 class="asub">大項目別（増えた順）</h3>`
-        + anaTable(["大項目", "前の12か月", "直近12か月", "差"], rows.map(x => line(esc(x.c), x.b, x.a)))
+        + anaTable(["大項目", hB, hA, "差"], rows.map(x => line(esc(x.c), x.b, x.a)))
         + (nA < 12 || nB < 12 ? `<p class="hint">記録のある月が12か月に満たない期間があります（前 ${nB}か月 / 直近 ${nA}か月）。</p>` : "");
     }
     html += anaCard("前年との比較",
-      `直近12か月（${slash(prev12[0])}〜${slash(prev12[11])}）と、その前の12か月の合計。大項目は税金・投資も含めたすべて。`, body);
+      `直近12か月と、その1年前の12か月の合計を比べています。今月は途中なので入れず、先月までの12か月を「直近」としています（月が替わると1か月ずつずれます）。大項目は税金・投資も含めたすべて。`, body);
   }
 
   /* 4. 貯蓄率・投資率（年別）
@@ -1232,7 +1247,7 @@ $("anaWrap").addEventListener("click", e => {
 
 let expHot = null;
 function drawExpChart(S){
-  const svg = $("expChart");
+  const svg = $("expChart"); $("expTip").style.opacity = 0;
   const { W, H, P } = chartBox();
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   const n = S.months.length;
@@ -1281,11 +1296,7 @@ function drawExpChart(S){
   g += `<g id="expHov"></g><rect x="${P.l}" y="${P.t}" width="${plotW}" height="${H-P.t-P.b}" fill="transparent" id="expHit"/>`;
   svg.innerHTML = g;
   expHot = { S, X, Y, n, W, H, P, bw };
-  const hit = svg.querySelector("#expHit");
-  hit.addEventListener("pointermove", onExpHover);
-  hit.addEventListener("pointerleave", () => {
-    $("expTip").style.opacity = 0; svg.querySelector("#expHov").innerHTML = "";
-  });
+  bindTip(svg.querySelector("#expHit"), onExpHover, hideExpTip);
 }
 function onExpHover(e){
   const { S, X, Y, n, W, H, P, bw } = expHot;

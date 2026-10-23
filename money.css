@@ -240,6 +240,8 @@ button,a,label,.tile{touch-action:manipulation}
 .rangebtns button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);
   color:var(--accent-ink);font-weight:700}
 .chartcard svg{display:block;width:100%;height:auto;overflow:visible}
+/* 長押しで文字選択・コールアウトが出てツールチップを邪魔しないように。横になぞると月を切り替え、縦はスクロール */
+.chartcard svg{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:pan-y}
 .legend{display:flex;flex-wrap:wrap;gap:5px 13px;margin:9px 2px 4px}
 .legend span{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--sub)}
 .legend i{width:9px;height:9px;border-radius:3px;display:inline-block}
@@ -260,6 +262,7 @@ button,a,label,.tile{touch-action:manipulation}
 .atbl td{text-align:right;padding:6px 0 6px 6px;border-top:1px solid var(--line);white-space:nowrap;vertical-align:top}
 .atbl th:first-child,.atbl td:first-child{text-align:left;padding-left:0;white-space:normal;word-break:break-all}
 .atbl td small{display:block;font-size:10px;color:var(--dim)}
+.atbl th small{display:block;font-size:9.5px;margin-top:1px}
 .atbl td:first-child small{display:inline;margin-left:4px}
 .atbl .abar{display:block;height:4px;background:var(--panel2);border-radius:999px;overflow:hidden;margin:3px 0 0 auto;width:60px}
 .atbl .abar span{display:block;height:100%;border-radius:999px}
