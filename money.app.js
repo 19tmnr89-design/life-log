@@ -58,7 +58,7 @@ function cls(r){
 }
 const rCat = r => cls(r)[0], rKind = r => cls(r)[1], rFreq = r => cls(r)[2];
 /* 新しい内容を使ったら分類マスタに覚えさせる */
-function learn(a, sub, cat, kind, freq){
+function learn(a, sub, cat, kind, freq, orig){
   if(!sub || !cat) return;
   const maps = a.filter(x => x.k === "map");
   if(!maps.length){ a.push({ k:"map", id:uid(), v:{ [sub]:[cat, kind, freq] } }); return; }
@@ -66,10 +66,17 @@ function learn(a, sub, cat, kind, freq){
   const m = maps.reduce((x, y) => Object.keys(y.v || {}).length > Object.keys(x.v || {}).length ? y : x);
   m.v ||= {};
   maps.forEach(o => { if(o !== m) Object.assign(m.v, o.v || {}); });
+  const prev = m.v[sub];
   m.v[sub] = [cat, kind, freq];
+  if(kind === SP) m.v[sub][3] = orig || (prev && prev[3]) || V;
 }
 
 const V = "消費（流動費）", F = "消費（固定費）", R = "浪費", T = "税金", K = "教育", I = "投資";
+/* 特別費: 引越しなど一過性の支出。大項目はそのまま（例: 住居）で、中項目だけ SP にする。
+   生活費・平均・見込みからは外して別に出すが、支出（全額）と収支には含める。
+   修正シートの「特別費として扱う」で内容ごとに付け外しする。外したときに戻す元の中項目は
+   分類マスタの4番目（[大項目, SP, リベ分類, 元の中項目]）に覚えておく。 */
+const SP = "特別費";
 const M2 = "2.毎月・変動", M1 = "1.毎月・固定", M4 = "4.不定・変動", MI = "投資";
 
 /* 取り込み前に使う汎用の初期セット（一般的な費目のみ） */
@@ -122,7 +129,7 @@ function catTree(){
     (t[c] ||= []);
     let e = t[c].find(x => x.s === r.s);
     if(!e){ e = { s:r.s, g, f:fr, n:(f[r.s] || 0) }; t[c].push(e); }
-    e.n++;
+    e.g = g; e.n++;
   }
   for(const k in t) t[k].sort((a, b) => b.n - a.n);
   return t;
@@ -913,7 +920,9 @@ function openEdit(id){
     const cur = rCat(r);
     if(cur && !cats.includes(cur)) cats.push(cur);
     $("eCat").innerHTML = cats.map(c => `<option value="${esc(c)}"${c === cur ? " selected" : ""}>${esc(c)}</option>`).join("");
+    $("eSp").checked = rKind(r) === SP;
   }
+  $("eSpField").hidden = inc;
   $("eSubList").innerHTML = (inc ? incomeItems() : allItems())
     .map(x => `<option value="${esc(x.s)}">`).join("");
   $("editSheet").hidden = false;
@@ -921,10 +930,10 @@ function openEdit(id){
 function closeEdit(){ $("editSheet").hidden = true; editId = null; }
 $("editBg").addEventListener("click", closeEdit);
 $("eCancel").addEventListener("click", closeEdit);
-/* 内容を書き換えたら、既に知っている内容なら大項目を自動で合わせる */
+/* 内容を書き換えたら、既に知っている内容なら大項目と特別費のチェックを自動で合わせる */
 $("eSub").addEventListener("input", () => {
   const hit = allItems().find(x => x.s === $("eSub").value.trim());
-  if(hit && !$("eCatField").hidden) $("eCat").value = hit.c;
+  if(hit && !$("eCatField").hidden){ $("eCat").value = hit.c; $("eSp").checked = hit.g === SP; }
 });
 $("eAmt").addEventListener("input", e => { const n = numOf(e.target); e.target.value = n ? yen(n) : ""; });
 $("eSave").addEventListener("click", () => {
@@ -942,7 +951,9 @@ $("eSave").addEventListener("click", () => {
   if(rType(r) !== "i"){
     const cat = $("eCat").value;
     const hit = (catTree()[cat] || []).find(x => x.s === sub);
-    learn(a, sub, cat, hit ? hit.g : V, hit ? hit.f : M4);
+    /* 特別費のチェック。外したら覚えておいた元の中項目に戻す */
+    const now = hit ? hit.g : V, base = now === SP ? ((clsMap()[sub] || [])[3] || V) : now;
+    learn(a, sub, cat, $("eSp").checked ? SP : base, hit ? hit.f : M4, base);
     delete r.c; delete r.g; delete r.f;   // 分類はマスタ側に寄せる
   }
   put(a); lastIds = [];
@@ -994,7 +1005,7 @@ function expSeries(){
     const m = r.d.slice(0, 7); if(!set.has(m)) continue;
     if(rType(r) === "i"){ byMonth[m].inc += r.m; continue; }
     const k = rKind(r);
-    if(expFilter === "use" && (k === T || k === I)) continue;   // 税金と投資を除いた「消費」だけ
+    if(expFilter === "use" && (k === T || k === I || k === SP)) continue;   // 税金・投資・特別費を除いた「消費」だけ
     const c = rCat(r) || "未分類";
     byMonth[m].exp[c] = (byMonth[m].exp[c] || 0) + r.m;
     catTotal[c] = (catTotal[c] || 0) + r.m;
@@ -1047,7 +1058,7 @@ function renderExp(){
 
   const sum = Object.values(S.folded).reduce((a, b) => a + b, 0);
   $("expCatCap").textContent = `${S.months[0].replace("-","/")} 〜 ${S.months[S.months.length-1].replace("-","/")}（${S.months.length}か月）の支出を大項目ごとに合計し、1か月あたりにならしたもの。`
-    + `上のグラフで選んだ期間と「すべて／消費のみ」に連動します（今月は途中の分も含みます）。`
+    + `上のグラフで選んだ期間と「すべて／消費のみ（税金・投資・特別費を除く）」に連動します（今月は途中の分も含みます）。`
     + `期間の合計 ${yen(sum)}円、月平均 ${yen(Math.round(sum / S.months.length))}円。`;
   const max = Math.max(...Object.values(S.folded), 1);
   $("expCats").innerHTML = S.order.map((c, s) => {
@@ -1068,7 +1079,7 @@ const renderLogMode = () => logMode === "chart" ? renderExp() : logMode === "ana
 
 /* =========================================================================
    分析（支出タブの [分析]）
-   「生活費」= 支出から税金・社会保険（T）と投資（I）を除いたもの。AI相談用のまとめと同じ定義。
+   「生活費」= 支出から税金・社会保険（T）・投資（I）・特別費（S）を除いたもの。AI相談用のまとめと同じ定義。
    比べる期間は、途中の今月を入れると平均が下がるので、原則として完了した月だけを使う。
    ========================================================================= */
 let anaItem = null;
@@ -1082,13 +1093,16 @@ function anaMonths(){
   const byM = {};
   for(const r of recs()){
     if(r.k !== "t") continue;
-    const o = byM[r.d.slice(0, 7)] ||= { inc:0, exp:0, tax:0, inv:0, fix:0, life:0, cat:{}, all:{}, sub:{} };
+    const o = byM[r.d.slice(0, 7)] ||= { inc:0, exp:0, tax:0, inv:0, sp:0, fix:0, life:0, cat:{}, all:{}, sub:{} };
     if(rType(r) === "i"){ o.inc += r.m; continue; }
     const k = rKind(r), c = rCat(r) || "未分類";
     o.exp += r.m;
-    o.all[c] = (o.all[c] || 0) + r.m;
+    /* 前年比の大項目別では、特別費は元の大項目に混ぜず「特別費」として別の行にする */
+    const ca = k === SP ? SP : c;
+    o.all[ca] = (o.all[ca] || 0) + r.m;
     if(k === T){ o.tax += r.m; continue; }
     if(k === I){ o.inv += r.m; continue; }
+    if(k === SP){ o.sp += r.m; continue; }
     o.life += r.m;
     if(k === F) o.fix += r.m;
     o.cat[c] = (o.cat[c] || 0) + r.m;
@@ -1125,14 +1139,14 @@ function renderAna(){
      「今月の実績」と「過去12か月の月平均」の大きい方（まだ払っていなければ平均）をそのまま足し、
      それ以外（変動費）だけを経過日数で月末まで延ばす。 */
   {
-    const cur = byM[ym] || { life:0, fix:0 };
+    const cur = byM[ym] || { life:0, fix:0, sp:0 };
     const d = +today().slice(8), D = new Date(+ym.slice(0, 4), +ym.slice(5), 0).getDate();
     const avgFix = avgOver(byM, prev12, o => o.fix) || 0, avgLife = avgOver(byM, prev12, o => o.life);
     const proj = Math.max(cur.fix, avgFix) + (cur.life - cur.fix) / d * D;
     const diff = avgLife == null ? null : proj - avgLife;
     html += `<div class="tiles-stat">
       <div class="stat"><div class="lab">今月の生活費（${d}日まで）</div><div class="val">${yen(cur.life)}<span class="u">円</span></div>
-        <div class="note">うち固定費 ${yen(cur.fix)} 円</div></div>
+        <div class="note">うち固定費 ${yen(cur.fix)} 円${cur.sp ? `／特別費 ${yen(cur.sp)} 円は別` : ""}</div></div>
       <div class="stat"><div class="lab">月末の見込み</div><div class="val">${yen(Math.round(proj))}<span class="u">円</span></div>
         <div class="note">${diff == null ? "&nbsp;" : `平均より <b class="${diffCls(diff)}">${signYen(diff)}</b> 円`}</div></div>
       <div class="stat"><div class="lab">過去12か月の月平均</div><div class="val">${avgLife == null ? "−" : yen(Math.round(avgLife))}<span class="u">円</span></div>
@@ -1162,7 +1176,7 @@ function renderAna(){
            + `<h3 class="asub">少なくなっている</h3>` + (dn.length ? anaTable(head, dn.map(row)) : `<p class="hint">ありません</p>`);
     }
     html += anaCard("いつもより多い・少ない大項目",
-      `生活費の月平均。直近3か月と、その前の12か月（＝いつも）を比べています。今月は途中なので入れていません。`, body);
+      `生活費（税金・投資・特別費を除く）の月平均。直近3か月と、その前の12か月（＝いつも）を比べています。今月は途中なので入れていません。`, body);
   }
 
   /* 3. 前年との比較（直近12か月 vs その前の12か月。どちらも完了した月だけ） */
@@ -1182,35 +1196,36 @@ function renderAna(){
       body = anaTable(["", hB, hA, "差"], [
           line("<b>収入</b>", tot(before, o => o.inc), tot(prev12, o => o.inc), true),
           line("<b>生活費</b>", tot(before, o => o.life), tot(prev12, o => o.life)),
+          line("<b>特別費</b>", tot(before, o => o.sp), tot(prev12, o => o.sp)),
           line("<b>支出（全額）</b>", tot(before, o => o.exp), tot(prev12, o => o.exp)),
         ]) + `<h3 class="asub">大項目別（増えた順）</h3>`
         + anaTable(["大項目", hB, hA, "差"], rows.map(x => line(esc(x.c), x.b, x.a)))
         + (nA < 12 || nB < 12 ? `<p class="hint">記録のある月が12か月に満たない期間があります（前 ${nB}か月 / 直近 ${nA}か月）。</p>` : "");
     }
     html += anaCard("前年との比較",
-      `直近12か月と、その1年前の12か月の合計を比べています。今月は途中なので入れず、先月までの12か月を「直近」としています（月が替わると1か月ずつずれます）。大項目は税金・投資も含めたすべて。`, body);
+      `直近12か月と、その1年前の12か月の合計を比べています。今月は途中なので入れず、先月までの12か月を「直近」としています（月が替わると1か月ずつずれます）。生活費は税金・投資・特別費を除いたもの。大項目は税金・投資も含めたすべてで、特別費は元の大項目に混ぜず「特別費」の行にまとめています。`, body);
   }
 
   /* 4. 貯蓄率・投資率（年別）
-     貯蓄率＝（収入 − 税金・社会保険 − 生活費）÷ 収入。投資に回した分も「残した」側に数える。
+     貯蓄率＝（収入 − 税金・社会保険 − 生活費 − 特別費）÷ 収入。投資に回した分も「残した」側に数える。
      投資率＝投資 ÷ 収入。 */
   {
     const Y = {};
     Object.entries(byM).forEach(([m, o]) => {
-      const y = Y[m.slice(0, 4)] ||= { inc:0, tax:0, inv:0, life:0 };
-      y.inc += o.inc; y.tax += o.tax; y.inv += o.inv; y.life += o.life;
+      const y = Y[m.slice(0, 4)] ||= { inc:0, tax:0, inv:0, life:0, sp:0 };
+      y.inc += o.inc; y.tax += o.tax; y.inv += o.inv; y.life += o.life; y.sp += o.sp;
     });
     const bar = (v, col) => `<span class="abar"><span style="width:${Math.max(0, Math.min(100, v)).toFixed(1)}%;background:${col}"></span></span>`;
     const rows = Object.keys(Y).sort().reverse().map(y => {
       const o = Y[y];
       if(!o.inc) return [y, "0", "−", "−"];
-      const sr = (o.inc - o.tax - o.life) / o.inc * 100, ir = o.inv / o.inc * 100;
+      const sr = (o.inc - o.tax - o.life - o.sp) / o.inc * 100, ir = o.inv / o.inc * 100;
       return [y + (y === ym.slice(0, 4) ? "<small>途中</small>" : ""), yen(o.inc),
         `<b class="${sr < 0 ? "down" : ""}">${Math.round(sr)}%</b>` + bar(sr, "var(--income)"),
         `<b>${Math.round(ir)}%</b>` + bar(ir, "var(--invest)")];
     });
     html += anaCard("貯蓄率・投資率",
-      "貯蓄率＝（収入 − 税金・社会保険 − 生活費）÷ 収入（投資に回した分も含む）。投資率＝投資 ÷ 収入。",
+      "貯蓄率＝（収入 − 税金・社会保険 − 生活費 − 特別費）÷ 収入（投資に回した分も含む）。投資率＝投資 ÷ 収入。",
       anaTable(["年", "収入", "貯蓄率", "投資率"], rows));
   }
 
@@ -1219,7 +1234,7 @@ function renderAna(){
   {
     const last12 = monthList(shiftMonth(ym, -11), ym), cnt = {};
     last12.forEach(m => byM[m] && Object.entries(byM[m].sub).forEach(([s, e]) => {
-      if(e.k !== F) cnt[s] = (cnt[s] || 0) + e.n;
+      if(e.k !== F) cnt[s] = (cnt[s] || 0) + e.n;   // 特別費は生活費の sub に入らない
     }));
     const top = Object.entries(cnt).sort((a, b) => b[1] - a[1]).slice(0, 6).map(x => x[0]);
     let body;
@@ -1409,8 +1424,8 @@ function aiSummary(){
   const tx = recs().filter(r => r.k === "t").sort((a, b) => a.d.localeCompare(b.d));
   if(!tx.length) return "";
   const ym = today().slice(0, 7), from12 = shiftMonth(ym, -11), from24 = shiftMonth(ym, -23);
-  /* 月ごと・年ごとに 収入 / 支出（全額）/ 税金・社会保険 / 投資 を集める */
-  const blank = () => ({ inc:0, exp:0, tax:0, inv:0 });
+  /* 月ごと・年ごとに 収入 / 支出（全額）/ 税金・社会保険 / 投資 / 特別費 を集める */
+  const blank = () => ({ inc:0, exp:0, tax:0, inv:0, sp:0 });
   const byM = {}, byY = {}, catY = {}, subs = {}, incs = {};
   for(const r of tx){
     const m = r.d.slice(0, 7), y = r.d.slice(0, 4);
@@ -1424,33 +1439,36 @@ function aiSummary(){
     M.exp += r.m; Y.exp += r.m;
     if(k === T){ M.tax += r.m; Y.tax += r.m; }
     if(k === I){ M.inv += r.m; Y.inv += r.m; }
-    (catY[c] ||= {})[y] = (catY[c][y] || 0) + r.m;
+    if(k === SP){ M.sp += r.m; Y.sp += r.m; }
+    const ca = k === SP ? `${SP}（${c}）` : c;
+    (catY[ca] ||= {})[y] = (catY[ca][y] || 0) + r.m;
     if(m >= from12){
-      const e = subs[r.s] ||= { c, m:0, n:0 };
+      const e = subs[r.s] ||= { c:ca, m:0, n:0 };
       e.m += r.m; e.n++;
     }
   }
-  const life = o => o.exp - o.tax - o.inv;
+  const life = o => o.exp - o.tax - o.inv - o.sp;
   const years = Object.keys(byY).sort();
   const out = [];
   out.push("以下は私の家計簿アプリ（お金ログ）の記録を集計したものです。このデータをもとに家計の相談に乗ってください。");
   out.push("");
   out.push(`- 作成日: ${today()}　記録期間: ${tx[0].d.slice(0, 7)} 〜 ${tx[tx.length - 1].d.slice(0, 7)}（取引 ${yen(tx.length)}件）`);
   out.push(`- 金額はすべて円。${ym} は月の途中までの記録です。`);
-  out.push("- 「支出」は税金・社会保険と投資（積立など）も含めた全額。「生活費」は支出から税金・社会保険と投資を除いたもの。");
+  out.push("- 「支出」は税金・社会保険と投資（積立など）、特別費も含めた全額。「生活費」は支出から税金・社会保険・投資・特別費を除いたもの。");
+  out.push("- 「特別費」は引越しなど一過性の支出。普段の生活費の傾向を見るときは除いて考えてください。");
   out.push("- 「収支」は 収入 − 支出（投資は支出に含むので、投資に回した分は収支を減らす）。");
 
   out.push("", "## 年別の収支");
-  out.push(mdTable(["年", "収入", "支出", "うち税金・社会保険", "うち投資", "生活費", "収支"],
+  out.push(mdTable(["年", "収入", "支出", "うち税金・社会保険", "うち投資", "うち特別費", "生活費", "収支"],
     years.map(y => { const o = byY[y];
-      return [y, yen(o.inc), yen(o.exp), yen(o.tax), yen(o.inv), yen(life(o)), yen(o.inc - o.exp)]; })));
+      return [y, yen(o.inc), yen(o.exp), yen(o.tax), yen(o.inv), yen(o.sp), yen(life(o)), yen(o.inc - o.exp)]; })));
 
   out.push("", "## 直近24か月の月別収支");
   const months = [];
   for(let m = from24; m <= ym; m = shiftMonth(m, 1)) months.push(m);
-  out.push(mdTable(["月", "収入", "生活費", "税金・社会保険", "投資", "収支"],
+  out.push(mdTable(["月", "収入", "生活費", "税金・社会保険", "投資", "特別費", "収支"],
     months.map(m => { const o = byM[m] || blank();
-      return [m, yen(o.inc), yen(life(o)), yen(o.tax), yen(o.inv), yen(o.inc - o.exp)]; })));
+      return [m, yen(o.inc), yen(life(o)), yen(o.tax), yen(o.inv), yen(o.sp), yen(o.inc - o.exp)]; })));
 
   out.push("", "## 大項目別の支出（年別）");
   const cats = Object.keys(catY).sort((a, b) =>

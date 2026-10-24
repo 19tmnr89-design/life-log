@@ -340,6 +340,12 @@ nav button[aria-current="page"]{color:var(--accent)}
 .sheet-body .sub{font-size:11.5px;color:var(--dim);margin:3px 0 15px}
 .field{display:block;margin-bottom:11px}
 .field[hidden]{display:none}
+.spchk{display:flex;gap:10px;align-items:flex-start;margin:-2px 0 13px;padding:10px 11px;
+  background:var(--panel2);border:1px solid var(--line);border-radius:10px}
+.spchk[hidden]{display:none}
+.spchk input{width:18px;height:18px;margin-top:1px;flex:none;accent-color:var(--accent)}
+.spchk b{display:block;font-size:12.5px;font-weight:700}
+.spchk small{display:block;font-size:10.5px;color:var(--sub);line-height:1.6;margin-top:2px}
 .field span{display:block;font-size:10.5px;color:var(--sub);font-weight:700;
   letter-spacing:.06em;margin-bottom:5px}
 .field input,.field select{width:100%;background:var(--panel2);border:1px solid var(--line);
