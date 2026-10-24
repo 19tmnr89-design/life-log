@@ -869,20 +869,35 @@ function renderEntryHeader(){
     + `<tr><th>収入</th><td class="inc">${yen(m.inc)}</td><td class="inc">${yen(y.inc)}</td></tr>`
     + `<tr><th>支出（投資除き）</th><td>${yen(m.exp - m.inv)}</td><td>${yen(y.exp - y.inv)}</td></tr>`;
 }
+/* 履歴の検索。空白で区切った語がすべて含まれる記録だけ残す。
+   内容・大項目・補足・金額（「3000」でも「3,000」でも）・日付（「2026-08」でも「2026/08」でも）が対象。 */
+let logQ = "";
+const logHay = r => [r.s, rCat(r), r.n || "", r.m, yen(r.m), r.d, r.d.replace(/-/g, "/"),
+                     rType(r) === "i" ? "収入" : rKind(r)].join(" ").toLowerCase();
 function renderLog(){
   /* 同じ日付の中は取り込み順のまま（JSのsortは安定なので入れ替わらない） */
-  const rs = recs().filter(r => r.k === "t").reverse().sort((a, b) => b.d.localeCompare(a.d));
+  const all = recs().filter(r => r.k === "t").reverse().sort((a, b) => b.d.localeCompare(a.d));
   renderLogHeader();
-  if(!rs.length){
+  if(!all.length){
     $("logBody").innerHTML = `<p class="empty">まだ記録がありません。<br>入力タブで金額を打ち、内容を選ぶと保存されます。</p>`;
     return;
   }
+  const words = logQ.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const rs = words.length ? all.filter(r => { const h = logHay(r); return words.every(w => h.includes(w)); }) : all;
+  /* 日付ごとの支出合計（検索中は、見つかった記録だけの合計） */
+  const daySum = {};
+  rs.forEach(r => { if(rType(r) === "e") daySum[r.d] = (daySum[r.d] || 0) + r.m; });
   let html = "", cur = "";
+  if(words.length){
+    const e = rs.filter(r => rType(r) === "e").reduce((s, r) => s + r.m, 0);
+    const i = rs.filter(r => rType(r) === "i").reduce((s, r) => s + r.m, 0);
+    html += `<p class="loghit">${yen(rs.length)}件見つかりました${rs.length ? `　支出 ${yen(e)}円` + (i ? `／収入 ${yen(i)}円` : "") : ""}</p>`;
+    if(!rs.length){ $("logBody").innerHTML = html; return; }
+  }
   for(const r of rs.slice(0, 300)){
     if(r.d !== cur){
       cur = r.d;
-      const sum = rs.filter(x => x.d === cur && rType(x) === "e").reduce((s, x) => s + x.m, 0);
-      html += `<div class="day">${cur.replace(/-/g,"/")}（${wd(cur)}）　支出 ${yen(sum)}円</div>`;
+      html += `<div class="day">${cur.replace(/-/g,"/")}（${wd(cur)}）　支出 ${yen(daySum[cur] || 0)}円</div>`;
     }
     const col = rType(r) === "i" ? "var(--income)" : rKind(r) === I ? "var(--invest)" : "var(--accent)";
     html += `<div class="rec" data-e="${esc(r.id)}" role="button" tabindex="0">
@@ -893,8 +908,15 @@ function renderLog(){
   }
   $("logBody").innerHTML = html;
   if(rs.length > 300) $("logBody").insertAdjacentHTML("beforeend",
-    `<p class="hint" style="text-align:center;margin-top:14px">直近300件を表示しています</p>`);
+    `<p class="hint" style="text-align:center;margin-top:14px">新しい順に300件を表示しています${words.length ? "" : "。古い記録は上の欄で探せます"}</p>`);
 }
+/* 検索欄は作り直さない（日本語入力の変換が切れるため）。一覧だけ描き直す */
+$("logSearch").addEventListener("input", e => {
+  logQ = e.target.value; $("logClear").hidden = !logQ; renderLog();
+});
+$("logClear").addEventListener("click", () => {
+  logQ = ""; $("logSearch").value = ""; $("logClear").hidden = true; renderLog(); $("logSearch").focus();
+});
 $("logBody").addEventListener("click", e => {
   const row = e.target.closest("[data-e]"); if(!row) return;
   openEdit(row.dataset.e);
@@ -978,7 +1000,7 @@ $("logMode").addEventListener("click", e => {
   [...e.currentTarget.children].forEach(x => x.setAttribute("aria-pressed", x === b));
   $("expWrap").hidden = logMode !== "chart";
   $("anaWrap").hidden = logMode !== "ana";
-  $("logBody").hidden = logMode !== "list";
+  $("logBody").hidden = $("logSearchBox").hidden = logMode !== "list";
   renderLogMode();
 });
 $("expRange").addEventListener("click", e => {

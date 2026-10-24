@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#12141c">
 <title>お金ログ</title>
-<link rel="stylesheet" href="money.css?v=20261024">
+<link rel="stylesheet" href="money.css?v=20261024b">
 </head>
 <body>
 
@@ -168,6 +168,9 @@
 
     <div id="anaWrap" hidden></div>
 
+    <div class="searchbox" id="logSearchBox"><span class="ic">🔍</span>
+      <input id="logSearch" placeholder="履歴を探す（内容・金額・日付など）" autocomplete="off">
+      <button class="clr" id="logClear" aria-label="消す" hidden>✕</button></div>
     <div id="logBody"></div>
   </div>
 </section>
@@ -268,7 +271,7 @@ money_targets_2027.csv  account_id,target_yen</p>
   </div>
 </div>
 
-<script src="money.app.js?v=20261024"></script>
+<script src="money.app.js?v=20261024b"></script>
 <script>window.SYNC_APP = "money";</script>
 <script type="module" src="sync.js"></script>
 </body>
