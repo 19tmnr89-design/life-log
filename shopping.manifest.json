@@ -1,0 +1,17 @@
+{
+  "name": "買い物リスト",
+  "short_name": "買い物リスト",
+  "description": "夫婦でリアルタイム共有する買い物リスト",
+  "start_url": "./shopping.html",
+  "scope": "./shopping.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f6f4",
+  "theme_color": "#2f7d4f",
+  "lang": "ja",
+  "icons": [
+    { "src": "shopping-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "shopping-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "shopping-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

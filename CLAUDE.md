@@ -13,8 +13,9 @@
 - 公開URL: `https://19tmnr89-design.github.io/life-log/`
 - リポジトリ: `19tmnr89-design/life-log`（**public**）
 - 利用者は本人1人。PC（Chrome）とスマホ（ホーム画面に追加して使用）の2台。
+  ただし買い物リストだけは夫婦2人で使う（第15章）。
 
-現在4つのアプリが入っている。
+現在5つのアプリが入っている。
 
 | アプリ | 入口 | 状態 |
 |---|---|---|
@@ -22,6 +23,7 @@
 | お金ログ | `money.html` | 2026年8月に新規作成。家計簿と資産管理 |
 | もしもシート | `hoken.html` | 2026年9月、`heart-salon`リポジトリから移設。保険の整理・もしもの時のお金 |
 | ふるさと納税シート | `furusato.html` | 2026年9月に新規作成。寄付の記録と、あといくら寄付できるかの計算 |
+| 買い物リスト | `shopping.html` | 2026年11月、`heart-salon/shopping/` から移設。夫婦でリアルタイム共有（第15章） |
 
 ### ファイル構成
 
@@ -51,6 +53,14 @@ furusato.app.js       ふるさと納税シートの画面・入力
 furusato.data.js       税制の速算表（給与所得控除・配偶者控除など。実データなし）
 furusato.sim.js         上限額の計算（画面から独立した純粋関数）
 furusato.css          ふるさと納税シートのスタイル
+
+shopping.html           買い物リスト
+shopping.app.js         画面・Firestoreとの同期（sync.js は使わない）
+shopping.data.js        食材マスター（品目・数量の選択肢・選び方のコツ）
+shopping.css            スタイル
+shopping.sw.js          Service Worker（圏外でも開けるようにするキャッシュ。scope は shopping.html だけ）
+shopping.manifest.json  ホーム画面に追加したとき用
+shopping-192.png / shopping-512.png  アイコン
 ```
 
 命名は `<アプリ名>.html` + `<アプリ名>.app.js` + `<アプリ名>.css`。
@@ -308,8 +318,8 @@ allow list, delete: if false;
 
 ### ルールは `firestore.rules` が正本
 
-Firebase プロジェクト `app-develop-8b413` は、life-log の4アプリと heart-salon の買い物リスト
-（`shopping_lists`）で共用している。**ルールはプロジェクトに1つだけ**で、コンソールで公開すると
+Firebase プロジェクト `app-develop-8b413` は、life-log の5アプリで共用している
+（買い物リストの `shopping_lists` を含む）。**ルールはプロジェクトに1つだけ**で、コンソールで公開すると
 前のルールが丸ごと置き換わる。
 
 **ルールを変えるときは、必ずリポジトリ直下の `firestore.rules` を編集し、その全文をコンソールの
@@ -320,7 +330,7 @@ Firebase プロジェクト `app-develop-8b413` は、life-log の4アプリと 
 公開され、資料どおりだった8月28日版（`kintore` と `money`、list禁止）が上書きされた。
 その結果、`money` はルールに該当しなくなって同期が止まり、`hoken` と `furusato` は
 そもそもルールに一度も入っていなかったため同期できていなかった。逆に `kintore` と `shopping_lists` は
-`allow read` で list が通る状態になっていた。11月に見つけ、このファイルにまとめた。
+`allow read` で list が通る状態になっていた。2026年11月17日に見つけ、このファイルの全文をコンソールで公開した。
 
 ---
 
@@ -713,3 +723,56 @@ sync.js は同期コード接続直後に「リモートと和集合マージ→
 - **筋トレログ・お金ログを壊さない。** `sync.js` は共通なので、触るときは後方互換を保つ
   （`SYNC_FINGERPRINT` / `SYNC_MODE` を未指定のアプリは従来動作、という形にする）。
 - CSV・JSON の取り込みは1台だけ。他の端末へは同期で配る。
+
+## 15. 買い物リスト
+
+2026年11月、`heart-salon` リポジトリの `shopping/` から移設した（heart-salon はゲームのリポジトリで、
+置き場所として名前が合わないため）。夫婦それぞれのスマホから同じリストをリアルタイムに編集する。
+妻が「📋 リスト作成」でリストを作り、夫が「🛒 買い物」で店内でチェックする使い方。
+
+### 他のアプリと違うところ
+
+- **`sync.js` を使わない。** Firestore SDK を `shopping.app.js` から直接使い、`onSnapshot` で
+  リアルタイムに購読する。オフライン永続化（IndexedDB）を有効にしてあり、店内で圏外になっても
+  チェックは端末に残って、電波が戻ると送られる。
+- **鍵は同期コードではなく部屋ID**（URL の `?room=xxxx`、20文字のランダム文字列）。
+  `localStorage["shopping-room-id"]` にも覚える。共有は ⚙️ →「共有用リンクをコピー」で相手に送る。
+  リンクを渡した相手は誰でも編集できる。
+- Firestore の構造:
+
+```
+shopping_lists/{roomId}
+  /items/{itemId}        … 今回買うもの
+  /master_meta/{name}    … マスターの差分（編集したコツ・カスタム品目・使用回数）
+  /history/{historyId}   … 買い物完了時のスナップショット（直近20件を表示）
+```
+
+  食材マスターの本体は `shopping.data.js`（コード側）にあり、Firestore には差分だけを置く。
+  コレクション全体を購読し、品目を削除するので、ルールは部屋の下だけ list / delete を許している（`firestore.rules`）。
+- **Service Worker がある。** `shopping.sw.js` は `scope: "./shopping.html"` で登録している。
+  life-log の直下に置いているので、scope を付けないと他のアプリのページまで制御してしまう。
+  キャッシュするファイルを変えたら `CACHE`（`shopping-v6` など）の番号を上げる。
+
+### 移設のときにやったこと
+
+- ファイル名を規約に合わせた（`index.html` → `shopping.html`、`app.js` → `shopping.app.js`、
+  `master-data.js` → `shopping.data.js`、`style.css` → `shopping.css`、`sw.js` → `shopping.sw.js`、
+  `manifest.json` → `shopping.manifest.json`、アイコン → `shopping-192.png` / `shopping-512.png`）。
+- `firebase-config.js` は life-log 共通のものを使う（同じプロジェクト）。
+- 旧URL（`heart-salon/shopping/`）には転送だけのページを残した。`?room=` を付けたまま
+  `life-log/shopping.html` に飛ばすので、古い共有リンクやホーム画面のアイコンからも同じ部屋に入れる。
+  旧 Service Worker は、自分のキャッシュを消して登録を解除するだけのものに差し替えた。
+- 同じオリジン（`19tmnr89-design.github.io`）なので、`localStorage` の部屋IDはそのまま引き継がれる。
+  ホーム画面のアイコンは、新しいURLで追加し直すのがおすすめ。
+
+### 同期されないときの確認
+
+⚙️ の「接続状態」に、部屋ID・ログイン状態・サーバー接続・保存方式が出る。二人のスマホで見比べる。
+
+| 症状 | 原因 | 対処 |
+| --- | --- | --- |
+| 二人の**部屋IDが違う** | 別々の部屋を見ている | 共有リンクを開き直す。ホーム画面から起動した端末は、一度リンクを開いてから追加し直す |
+| 「⚠️ 権限がありません」 | Firestore のルールに `shopping_lists` が無い | `firestore.rules` の全文がコンソールに公開されているか確認する（第4章） |
+| 「⚠️ ログインできません」 | 匿名認証に到達できない | 電波を確認して再読み込み。アプリ内ブラウザなら Safari / Chrome で開き直す |
+| 「📴 オフライン中」が消えない | サーバーに接続できていない | その端末の変更は相手に届いていない。電波の良い場所で再読み込みする |
+| 「保存方式: メモリのみ」 | IndexedDB が使えない環境 | プライベートブラウズや LINE などのアプリ内ブラウザを避ける |
