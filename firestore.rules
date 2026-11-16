@@ -1,0 +1,60 @@
+// Firestore セキュリティルール（Firebase プロジェクト app-develop-8b413 全体）
+//
+// このプロジェクトは複数のアプリで共用している。ルールは「プロジェクトに1つだけ」で、
+// コンソールで公開すると前のルールが丸ごと置き換わる。
+// → ルールを変えるときは必ずこのファイルを編集し、全文をコンソールに貼って公開する。
+//   どこか1つのアプリの分だけを貼ると、他のアプリの同期が止まる（2026年9月に実際に起きた。CLAUDE.md 第4章）。
+//
+// 使っているアプリとコレクション
+//   kintore         筋トレログ        life-log/kintore.html   （sync.js）
+//   money           お金ログ          life-log/money.html     （sync.js）
+//   hoken           もしもシート      life-log/hoken.html     （sync.js, SYNC_MODE=replace）
+//   furusato        ふるさと納税シート life-log/furusato.html  （sync.js）
+//   shopping_lists  買い物リスト      heart-salon/shopping/   （部屋ID + サブコレクション）
+//
+// 方針
+//   - 匿名認証は誰でも通るので、ドキュメントIDそのものが鍵。
+//   - トップレベルのコレクションでは list（一覧取得）を禁止する。
+//     allow read と書くと list も通り、IDを知らなくても全員分の中身が引けてしまう。
+//   - 上に無いものはすべて拒否。
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- life-log（sync.js）: 同期コードから作ったIDの1ドキュメントを get / set / onSnapshot するだけ ----
+    match /kintore/{docId} {
+      allow get, create, update: if request.auth != null;
+      allow list, delete: if false;
+    }
+    match /money/{docId} {
+      allow get, create, update: if request.auth != null;
+      allow list, delete: if false;
+    }
+    match /hoken/{docId} {
+      allow get, create, update: if request.auth != null;
+      allow list, delete: if false;
+    }
+    match /furusato/{docId} {
+      allow get, create, update: if request.auth != null;
+      allow list, delete: if false;
+    }
+
+    // ---- 買い物リスト（heart-salon/shopping）: 部屋IDが鍵 ----
+    // 部屋そのものは一覧させない。部屋IDを知っていれば、その下（items / master_meta / history）は
+    // 一覧・追加・削除まで自由に使える（アプリが onSnapshot(コレクション) と deleteDoc を使うため）。
+    match /shopping_lists/{roomId} {
+      allow get, create, update: if request.auth != null;
+      allow list, delete: if false;
+
+      match /{document=**} {
+        allow read, write: if request.auth != null;
+      }
+    }
+
+    // ---- それ以外は全部拒否 ----
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
