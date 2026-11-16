@@ -10,7 +10,7 @@
 //   money           お金ログ          life-log/money.html     （sync.js）
 //   hoken           もしもシート      life-log/hoken.html     （sync.js, SYNC_MODE=replace）
 //   furusato        ふるさと納税シート life-log/furusato.html  （sync.js）
-//   shopping_lists  買い物リスト      heart-salon/shopping/   （部屋ID + サブコレクション）
+//   shopping_lists  買い物リスト      life-log/shopping.html  （部屋ID + サブコレクション）
 //
 // 方針
 //   - 匿名認証は誰でも通るので、ドキュメントIDそのものが鍵。
@@ -40,7 +40,7 @@ service cloud.firestore {
       allow list, delete: if false;
     }
 
-    // ---- 買い物リスト（heart-salon/shopping）: 部屋IDが鍵 ----
+    // ---- 買い物リスト（shopping.html）: 部屋IDが鍵 ----
     // 部屋そのものは一覧させない。部屋IDを知っていれば、その下（items / master_meta / history）は
     // 一覧・追加・削除まで自由に使える（アプリが onSnapshot(コレクション) と deleteDoc を使うため）。
     match /shopping_lists/{roomId} {

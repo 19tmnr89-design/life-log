@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>買い物リスト</title>
+<meta name="description" content="夫婦でリアルタイム共有する買い物リスト">
+<link rel="manifest" href="shopping.manifest.json">
+<meta name="theme-color" content="#2f7d4f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="買い物リスト">
+<link rel="apple-touch-icon" href="shopping-192.png">
+<link rel="icon" href="shopping-192.png">
+<link rel="stylesheet" href="shopping.css">
+</head>
+<body>
+
+<!-- モードの行き来はほとんどないので、ヘッダーは固定せずスクロールで流す -->
+<header class="app-header">
+  <div class="mode-switch" role="tablist">
+    <button class="mode-tab is-active" data-mode="edit" role="tab">📋 リスト作成</button>
+    <button class="mode-tab" data-mode="shop" role="tab">🛒 買い物</button>
+  </div>
+  <button id="btn-settings" class="icon-btn" title="設定">⚙️</button>
+</header>
+
+<!-- 正常に同期できているときは表示しない（場所を取らないため） -->
+<div id="sync-status" class="sync-status" hidden></div>
+
+<main>
+  <!-- ============ 画面A: リスト作成 ============ -->
+  <section id="view-edit" class="view">
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>今回のリスト <span id="edit-count" class="count-badge">0</span></h2>
+        <button id="btn-restore-last" class="btn-ghost btn-sm" hidden>前回のリストを復元</button>
+      </div>
+      <ul id="current-list" class="item-list"></ul>
+      <p id="current-empty" class="empty-note">下の食材をタップして追加してください。</p>
+    </section>
+
+    <section class="panel" id="master-panel">
+      <div class="panel-head"><h2>追加する食材を検索</h2></div>
+      <input id="master-search" class="search-box" type="search" placeholder="品名で検索（例: オクラ、とうふ）" autocomplete="off">
+
+      <div id="frequent-wrap" class="freq-wrap" hidden>
+        <h3 class="sub-head">⭐ よく買うもの</h3>
+        <div id="frequent-chips" class="chip-grid"></div>
+      </div>
+
+      <div id="master-categories"></div>
+      <p id="master-empty" class="empty-note" hidden>該当する品目がありません。下の「リストにない物を追加」から登録できます。</p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>リストにない物を追加</h2></div>
+      <form id="free-add" class="free-add" autocomplete="off">
+        <input name="name" class="fa-name" placeholder="品名（必須）" required maxlength="40">
+        <div class="fa-row">
+          <input name="qty" class="fa-qty" type="number" inputmode="numeric" min="1" max="999" step="1" value="1" aria-label="数量">
+          <select name="unit" class="fa-unit" aria-label="単位"></select>
+        </div>
+        <input name="unitOther" class="fa-unit-other" placeholder="単位を入力" maxlength="6" hidden aria-label="単位（自由入力）">
+        <select name="category" class="fa-cat" aria-label="売り場"></select>
+        <input name="tip" class="fa-tip" placeholder="選び方のコツ（任意）" maxlength="120">
+        <label class="fa-check"><input type="checkbox" name="toMaster" checked> 次回から候補リストにも出す</label>
+        <button type="submit" class="btn-primary">リストに追加</button>
+      </form>
+    </section>
+  </section>
+
+  <!-- ============ 画面B: 買い物モード ============ -->
+  <section id="view-shop" class="view" hidden>
+
+    <div id="shop-todo" class="shop-todo"></div>
+    <p id="shop-empty" class="empty-note" hidden>リストが空です。「📋 リスト作成」から追加してください。</p>
+    <p id="shop-alldone" class="all-done" hidden>🎉 全部カゴに入りました！</p>
+
+    <details id="done-wrap" class="done-wrap" hidden>
+      <summary class="done-summary">✅ 購入済み <span id="done-count" class="count-badge">0</span></summary>
+      <div id="shop-done"></div>
+    </details>
+
+    <div class="shop-actions">
+      <button id="btn-complete" class="btn-primary">買い物を完了して履歴に保存</button>
+      <button id="btn-clear-checked" class="btn-ghost">購入済みだけ削除</button>
+      <button id="btn-clear-all" class="btn-danger">リストを全クリア</button>
+    </div>
+  </section>
+</main>
+
+<!-- 取り消しバー -->
+<div id="undo-bar" class="undo-bar" hidden>
+  <span id="undo-text"></span>
+  <button id="undo-btn" class="undo-btn">取り消す</button>
+</div>
+
+<!-- 品目の編集モーダル -->
+<div id="modal-item" class="modal" hidden>
+  <div class="modal-back" data-close="1"></div>
+  <div class="modal-body" role="dialog" aria-modal="true">
+    <h3 id="mi-title">品目の編集</h3>
+
+    <label class="field">
+      <span class="field-label">品名</span>
+      <input id="mi-name" type="text" maxlength="40">
+    </label>
+
+    <!-- 選択式の品目（キャベツ・ダイコンなど） -->
+    <div class="field" id="mi-amount-field" hidden>
+      <span class="field-label">数量</span>
+      <div id="mi-amounts" class="amount-chips"></div>
+    </div>
+
+    <!-- 数値＋単位の品目 -->
+    <div class="field" id="mi-qty-field">
+      <span class="field-label">数量</span>
+      <div class="qty-editor">
+        <button id="mi-minus" class="qty-btn" type="button" aria-label="減らす">−</button>
+        <input id="mi-qty" class="qty-input" type="number" inputmode="numeric" min="1" max="999" step="1">
+        <button id="mi-plus" class="qty-btn" type="button" aria-label="増やす">＋</button>
+        <select id="mi-unit" aria-label="単位"></select>
+      </div>
+      <input id="mi-unit-other" type="text" maxlength="6" placeholder="単位を入力" hidden>
+    </div>
+
+    <label class="field">
+      <span class="field-label">カテゴリ（売り場）</span>
+      <select id="mi-category"></select>
+    </label>
+
+    <label class="field">
+      <span class="field-label">💡 選び方のコツ</span>
+      <textarea id="mi-tip" rows="3" maxlength="120" placeholder="例: 産毛がしっかり生えているもの"></textarea>
+      <span class="field-note">保存すると、次回以降の候補リストにも反映されます。</span>
+    </label>
+
+    <div class="modal-actions">
+      <button id="mi-delete" class="btn-danger" type="button">リストから削除</button>
+      <span class="spacer"></span>
+      <button id="mi-cancel" class="btn-ghost" type="button">キャンセル</button>
+      <button id="mi-save" class="btn-primary" type="button">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 設定モーダル -->
+<div id="modal-settings" class="modal" hidden>
+  <div class="modal-back" data-close="1"></div>
+  <div class="modal-body" role="dialog" aria-modal="true">
+    <h3>設定</h3>
+
+    <div class="field">
+      <span class="field-label">この端末を使うのは</span>
+      <div id="who-buttons" class="who-buttons">
+        <button type="button" class="who-btn" data-who="妻">妻</button>
+        <button type="button" class="who-btn" data-who="夫">夫</button>
+        <button type="button" class="who-btn" data-who="その他">その他</button>
+      </div>
+      <span class="field-note">購入済みリストで「誰が入れたか」を表示するのに使うだけで、権限の違いはありません。</span>
+    </div>
+
+    <div class="field">
+      <span class="field-label">共有リンク</span>
+      <input id="share-url" type="text" readonly>
+      <button id="btn-copy" class="btn-primary btn-block" type="button">🔗 共有用リンクをコピー</button>
+      <span class="field-note">このリンクを開いた人は誰でも同じリストを見て編集できます。LINE などで相手に送ってください。</span>
+    </div>
+
+    <div class="field">
+      <span class="field-label">部屋ID（控えておくと復旧できます）</span>
+      <input id="room-input" type="text" autocomplete="off" spellcheck="false">
+      <button id="btn-join" class="btn-ghost btn-block" type="button">この部屋IDに切り替える</button>
+    </div>
+
+    <div class="field">
+      <span class="field-label">接続状態（うまく同期しないときの確認用）</span>
+      <pre id="diag" class="diag"></pre>
+      <button id="btn-copy-diag" class="btn-ghost btn-block" type="button">この情報をコピー</button>
+      <span class="field-note">相手のスマホと<b>部屋IDが同じ</b>なら同じリストを見ています。違う場合は、上の共有リンクを開き直してください。</span>
+    </div>
+
+    <div class="field">
+      <span class="field-label">買い物の履歴</span>
+      <div id="history-list" class="history-list"></div>
+    </div>
+
+    <div class="modal-actions">
+      <span class="spacer"></span>
+      <button id="st-close" class="btn-primary" type="button">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<div id="boot-error" class="boot-error" hidden>
+  <b>アプリを読み込めませんでした。</b><br>
+  電波の届く場所でページを再読み込みしてください。<br>
+  （一度開いたことがある端末なら、圏外でもそのまま使えます）
+</div>
+
+<script>
+  // shopping.app.js（や Firebase の読み込み）に失敗したときに、真っ白な画面にしないための保険
+  addEventListener("load", function () {
+    setTimeout(function () {
+      if (!window.__shoppingBooted) document.getElementById("boot-error").hidden = false;
+    }, 8000);
+  });
+</script>
+<script type="module" src="shopping.app.js"></script>
+</body>
+</html>

@@ -28,6 +28,10 @@ furusato.html                        🎁 ふるさと納税シート（寄付�
 furusato.app.js                      画面・入力
 furusato.data.js / furusato.sim.js   税制の速算表・上限額の計算（純粋関数）
 furusato.css
+
+shopping.html                        🛒 買い物リスト（夫婦でリアルタイム共有）
+shopping.app.js / shopping.data.js   画面・同期 / 食材マスター
+shopping.css / shopping.sw.js / shopping.manifest.json / shopping-*.png
 ```
 
 詳しい設計の経緯・データ形式・落とし穴は [`CLAUDE.md`](./CLAUDE.md) を参照。
@@ -68,3 +72,4 @@ GitHub の Settings → Pages で公開すると、次のURLでアクセスで�
 - `https://<ユーザー名>.github.io/life-log/money.html`（お金）
 - `https://<ユーザー名>.github.io/life-log/hoken.html`（もしも）
 - `https://<ユーザー名>.github.io/life-log/furusato.html`（ふるさと納税）
+- `https://<ユーザー名>.github.io/life-log/shopping.html`（買い物リスト）
