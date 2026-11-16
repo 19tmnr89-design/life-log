@@ -10,6 +10,7 @@ Firebaseによる同期コードでスマホ・PC間で共有されます。
 index.html            ホーム（各アプリへのリンク集）
 sync.js               端末間同期（Firebase Firestore・全アプリ共通）
 firebase-config.js    Firebase接続設定（共通）
+firestore.rules       Firestoreのセキュリティルール（全アプリ分。変えるときはこの全文を公開する）
 
 kintore.html           💪 筋トレログ本体
 app.js / style.css     筋トレログの処理・デザイン
